@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bunny Breeds — Character Sheet</title>
+<style>
+  html, body { margin: 0; background: #ece9e4; font-family: ui-rounded, system-ui, sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .sheet { width: 100%; height: auto; display: block; border-radius: 18px; box-shadow: 0 12px 40px -18px rgba(80,70,60,.5); }
+  .bar { display: flex; justify-content: center; margin: 14px 0; }
+  button { font: inherit; font-weight: 700; background: #71513B; color: #fff; border: none; border-radius: 999px; padding: 12px 22px; cursor: pointer; box-shadow: 0 8px 20px -10px rgba(80,60,40,.6); }
+  button:active { transform: translateY(1px); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="mount"></div>
+    <div class="bar"><button id="dl">Download SVG</button></div>
+  </div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   Bunny breed character sheet — kawaii/chibi sticker style.
+   Eight sitting rabbits, thick smooth outlines, flat pastel fills.
+--------------------------------------------------------------------------- */
+const PAL = {
+  bg: "#F7F6F4", outline: "#111111", cream: "#FFF9ED", white: "#FFFEFA",
+  tan: "#D9A66C", lightTan: "#E8C28F", orange: "#EAA34A", taupe: "#B9A28D",
+  brown: "#71513B", darkBrown: "#3F3028", black: "#292929", gray: "#85888B",
+  lightGray: "#C4C6C7", pink: "#F2A39B",
+};
+const OW = 9; // outer outline width
+
+// ---- reusable part builders (local coords, rabbit centered near origin) ----
+const stroke = (w) => `stroke="${PAL.outline}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+
+function body(cfg) {
+  const b = cfg.body;
+  return `<ellipse cx="0" cy="${b.cy}" rx="${b.rx}" ry="${b.ry}" fill="${cfg.coat}" ${stroke(OW)}/>`;
+}
+function head(cfg) {
+  const h = cfg.head;
+  return `<circle cx="0" cy="${h.cy}" r="${h.r}" fill="${cfg.coat}" ${stroke(OW)}/>`;
+}
+function paws(cfg) {
+  const y = cfg.body.cy + cfg.body.ry - 6;
+  const col = cfg.pawColor || cfg.coat;
+  return `<ellipse cx="-34" cy="${y}" rx="25" ry="17" fill="${col}" ${stroke(OW)}/>
+          <ellipse cx="34" cy="${y}" rx="25" ry="17" fill="${col}" ${stroke(OW)}/>`;
+}
+function uprightEars(cfg) {
+  const t = cfg.ears === "short" ? -120 : -196;   // ear tip y
+  const base = cfg.head.cy - cfg.head.r + 14;      // ear base y
+  const ec = cfg.earColor || cfg.coat;
+  const L = `M-40,${base} C-52,${(t + base) / 2} -50,${t} -30,${t} C-14,${t} -16,${(t + base) / 2} -18,${base} Z`;
+  const R = `M40,${base} C52,${(t + base) / 2} 50,${t} 30,${t} C14,${t} 16,${(t + base) / 2} 18,${base} Z`;
+  return `<path d="${L}" fill="${ec}" ${stroke(OW)}/><path d="${R}" fill="${ec}" ${stroke(OW)}/>`;
+}
+function lopEars(cfg) {
+  const ec = cfg.earColor || cfg.coat;
+  const L = `M-58,-64 C-104,-58 -118,6 -96,50 C-82,78 -44,68 -42,20 C-41,-12 -42,-50 -58,-64 Z`;
+  const R = `M58,-64 C104,-58 118,6 96,50 C82,78 44,68 42,20 C41,-12 42,-50 58,-64 Z`;
+  return `<path d="${L}" fill="${ec}" ${stroke(OW)}/><path d="${R}" fill="${ec}" ${stroke(OW)}/>`;
+}
+function innerEars(cfg) {
+  if (cfg.ears === "lop") {
+    return `<path d="M-84,-6 C-92,14 -86,38 -74,44 C-66,26 -66,6 -70,-8 Z" fill="${PAL.pink}"/>
+            <path d="M84,-6 C92,14 86,38 74,44 C66,26 66,6 70,-8 Z" fill="${PAL.pink}"/>`;
+  }
+  const t = cfg.ears === "short" ? -114 : -186;
+  const base = cfg.head.cy - cfg.head.r + 8;
+  const L = `M-36,${base} C-44,${(t + base) / 2} -44,${t + 10} -30,${t + 10} C-20,${t + 10} -20,${(t + base) / 2} -22,${base} Z`;
+  const R = `M36,${base} C44,${(t + base) / 2} 44,${t + 10} 30,${t + 10} C20,${t + 10} 20,${(t + base) / 2} 22,${base} Z`;
+  return `<path d="${L}" fill="${PAL.pink}"/><path d="${R}" fill="${PAL.pink}"/>`;
+}
+function face(cfg) {
+  const ey = cfg.head.cy - 4;      // eye y
+  const spot = cfg.markings === "spot"
+    ? `<circle cx="-30" cy="${ey}" r="20" fill="${cfg.earColor}"/><circle cx="30" cy="${ey}" r="20" fill="${cfg.earColor}"/>`
+    : "";
+  const eyes = `<ellipse cx="-30" cy="${ey}" rx="8.5" ry="12" fill="${PAL.outline}"/>
+                <ellipse cx="30" cy="${ey}" rx="8.5" ry="12" fill="${PAL.outline}"/>`;
+  const ny = cfg.head.cy + 30;     // nose y
+  const nose = cfg.markings === "spot"
+    ? `<path d="M-16,${ny - 4} Q0,${ny + 6} 16,${ny - 4} Q0,${ny + 2} -16,${ny - 4} Z" fill="${cfg.earColor}"/>`
+    : `<path d="M-8,${ny - 3} Q0,${ny - 6} 8,${ny - 3} Q7,${ny + 4} 0,${ny + 6} Q-7,${ny + 4} -8,${ny - 3} Z" fill="${PAL.brown}"/>`;
+  const my = ny + 8;               // mouth y
+  const mouth = `<path d="M0,${ny + 6} V${my}" fill="none" ${stroke(4)}/>
+                 <path d="M0,${my} q-9,9 -16,2" fill="none" ${stroke(4)}/>
+                 <path d="M0,${my} q9,9 16,2" fill="none" ${stroke(4)}/>`;
+  return spot + eyes + nose + mouth;
+}
+function fluffyFur(cfg) {
+  if (cfg.fur === "mane") {
+    // fluffy scalloped ruff around the head, carved open so the face shows
+    return `<path d="${scallop(0, cfg.head.cy, cfg.head.r + 20, cfg.head.r + 20, 15, 12)}" fill="${cfg.mane}" ${stroke(OW)}/>
+            <circle cx="0" cy="${cfg.head.cy}" r="${cfg.head.r - 6}" fill="${cfg.coat}"/>`;
+  }
+  return "";
+}
+function coatMarkings(cfg, clipId) {
+  const g = (inner) => `<g clip-path="url(#${clipId})">${inner}</g>`;
+  if (cfg.markings === "dutch") {
+    // white base: black cap on head (leaving a center blaze) + black rear on the lower body
+    return g(`
+      <path d="M-88,-70 Q0,-120 88,-70 L88,-20 Q0,-58 -88,-20 Z" fill="${cfg.earColor}"/>
+      <path d="M-24,-118 Q0,-40 0,10 Q0,-40 24,-118 Z" fill="${cfg.coat}"/>
+      <path d="M-92,70 Q-40,44 -30,70 L-30,150 L-92,150 Z" fill="${cfg.earColor}"/>
+      <path d="M92,70 Q40,44 30,70 L30,150 L92,150 Z" fill="${cfg.earColor}"/>`);
+  }
+  if (cfg.markings === "spot") {
+    return g(`
+      <path d="M0,-118 Q10,-40 8,60" fill="none" stroke="${cfg.earColor}" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="-70" cy="86" r="13" fill="${cfg.earColor}"/>
+      <circle cx="70" cy="86" r="13" fill="${cfg.earColor}"/>
+      <circle cx="-50" cy="120" r="9" fill="${cfg.earColor}"/>
+      <circle cx="50" cy="120" r="9" fill="${cfg.earColor}"/>`);
+  }
+  return "";
+}
+// scalloped closed blob (for manes / wool)
+function scallop(cx, cy, rx, ry, bumps, amp) {
+  const pt = [];
+  for (let i = 0; i < bumps; i++) { const a = (i / bumps) * Math.PI * 2 - Math.PI / 2; pt.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); }
+  let d = "";
+  for (let i = 0; i < bumps; i++) {
+    const [x, y] = pt[i], [nx, ny] = pt[(i + 1) % bumps];
+    const mx = (x + nx) / 2, my = (y + ny) / 2, a = Math.atan2(my - cy, mx - cx);
+    if (i === 0) d += `M${x.toFixed(1)},${y.toFixed(1)}`;
+    d += ` Q${(mx + Math.cos(a) * amp).toFixed(1)},${(my + Math.sin(a) * amp).toFixed(1)} ${nx.toFixed(1)},${ny.toFixed(1)}`;
+  }
+  return d + "Z";
+}
+
+// ---- assemble one rabbit --------------------------------------------------
+let UID = 0;
+function drawRabbit(cfg) {
+  const clipId = "clip" + (UID++);
+  let inner = "";
+  if (cfg.fur !== "wool") {
+    inner += (cfg.ears === "lop" ? lopEars(cfg) : uprightEars(cfg));
+    inner += body(cfg);
+    inner += head(cfg);
+    inner += `<defs><clipPath id="${clipId}"><circle cx="0" cy="${cfg.head.cy}" r="${cfg.head.r}"/><ellipse cx="0" cy="${cfg.body.cy}" rx="${cfg.body.rx}" ry="${cfg.body.ry}"/></clipPath></defs>`;
+    inner += coatMarkings(cfg, clipId);
+    if (cfg.muzzle) inner += `<g clip-path="url(#${clipId})"><ellipse cx="0" cy="${cfg.head.cy + 34}" rx="46" ry="40" fill="${cfg.muzzle}"/><ellipse cx="0" cy="${cfg.body.cy + 6}" rx="46" ry="42" fill="${cfg.muzzle}"/></g>`;
+    inner += fluffyFur(cfg);
+    inner += innerEars(cfg);
+    inner += paws(cfg);
+    inner += face(cfg);
+  } else {
+    inner += woolRabbit(cfg);
+  }
+  const s = cfg.pos.s || 1;
+  return `<g transform="translate(${cfg.pos.x},${cfg.pos.y}) scale(${s})">${inner}</g>`;
+}
+// Angora: a fluffy scalloped cloud with forehead curls and small ears
+function woolRabbit(cfg) {
+  const cloud = scallop(0, 30, 118, 122, 22, 12);
+  const tinyEars = `<path d="M-30,-84 C-40,-124 -36,-150 -22,-150 C-12,-150 -14,-114 -16,-82 Z" fill="${cfg.coat}" ${stroke(OW)}/>
+                    <path d="M30,-84 C40,-124 36,-150 22,-150 C12,-150 14,-114 16,-82 Z" fill="${cfg.coat}" ${stroke(OW)}/>`;
+  const curls = `<path d="M-40,-58 q14,-16 28,0 q14,-16 28,0 q14,-16 24,2" fill="none" stroke="${PAL.lightTan}" stroke-width="6" stroke-linecap="round"/>`;
+  const ey = -18;
+  const face = `<ellipse cx="-28" cy="${ey}" rx="8" ry="11" fill="${PAL.outline}"/><ellipse cx="28" cy="${ey}" rx="8" ry="11" fill="${PAL.outline}"/>
+    <path d="M-7,10 Q0,7 7,10 Q6,17 0,19 Q-6,17 -7,10 Z" fill="${PAL.brown}"/>
+    <path d="M0,19 V26" fill="none" ${stroke(4)}/><path d="M0,26 q-8,8 -14,2" fill="none" ${stroke(4)}/><path d="M0,26 q8,8 14,2" fill="none" ${stroke(4)}/>`;
+  return `${tinyEars}<path d="${cloud}" fill="${cfg.coat}" ${stroke(OW)}/>${curls}${face}`;
+}
+
+// ---- breed configuration --------------------------------------------------
+const RABBITS = [
+  { name: "Holland Lop", ears: "lop", coat: PAL.tan, muzzle: PAL.cream, fur: "none", markings: "none",
+    head: { cy: -34, r: 88 }, body: { cy: 78, rx: 82, ry: 66 }, pos: { x: 380, y: 320, s: 0.95 } },
+  { name: "Lionhead", ears: "upright", coat: PAL.cream, fur: "mane", mane: PAL.orange, markings: "none",
+    head: { cy: -30, r: 80 }, body: { cy: 78, rx: 80, ry: 64 }, pos: { x: 720, y: 320, s: 0.98 } },
+
+  { name: "Dutch", ears: "upright", coat: PAL.white, earColor: PAL.black, fur: "none", markings: "dutch", pawColor: PAL.white,
+    head: { cy: -34, r: 86 }, body: { cy: 80, rx: 82, ry: 66 }, pos: { x: 250, y: 720, s: 0.92 } },
+  { name: "Netherland Dwarf", ears: "short", coat: PAL.taupe, fur: "none", markings: "none",
+    head: { cy: -24, r: 92 }, body: { cy: 82, rx: 76, ry: 58 }, pos: { x: 540, y: 730, s: 0.86 } },
+  { name: "English Spot", ears: "upright", coat: PAL.white, earColor: PAL.darkBrown, fur: "none", markings: "spot",
+    head: { cy: -34, r: 86 }, body: { cy: 80, rx: 82, ry: 66 }, pos: { x: 830, y: 720, s: 0.92 } },
+
+  { name: "Flemish Giant", ears: "upright", coat: PAL.lightTan, fur: "none", markings: "none",
+    head: { cy: -30, r: 86 }, body: { cy: 90, rx: 96, ry: 76 }, pos: { x: 250, y: 1120, s: 1.02 } },
+  { name: "Mini Rex", ears: "upright", coat: PAL.gray, muzzle: PAL.lightGray, fur: "none", markings: "none",
+    head: { cy: -32, r: 82 }, body: { cy: 78, rx: 78, ry: 62 }, pos: { x: 540, y: 1130, s: 0.9 } },
+  { name: "Angora", ears: "short", coat: PAL.cream, fur: "wool", markings: "none",
+    head: { cy: -20, r: 92 }, body: { cy: 60, rx: 100, ry: 80 }, pos: { x: 830, y: 1110, s: 0.98 } },
+];
+
+function buildSVG() {
+  const rabbits = RABBITS.map(drawRabbit).join("\n");
+  return `<svg class="sheet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1440" preserveAspectRatio="xMidYMid meet">
+  <rect width="1080" height="1440" fill="${PAL.bg}"/>
+  ${rabbits}
+</svg>`;
+}
+
+document.getElementById("mount").innerHTML = buildSVG();
+document.getElementById("dl").onclick = () => {
+  const svg = document.querySelector("#mount svg").outerHTML;
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bunny-breeds.svg";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>
