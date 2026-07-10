@@ -888,10 +888,16 @@
   }
 
   function boot() {
+    document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => go(b.dataset.route));
+    // No password: open straight into the app (local-only mode).
+    if (!CFG.REQUIRE_PASSWORD && !CFG.FUNCTION_URL) {
+      const lb = $("#lockbtn"); if (lb) lb.style.display = "none";
+      enterApp();
+      return;
+    }
     $("#lock-art").innerHTML = B.sleeping(150);
     $("#lock-form").onsubmit = (e) => { e.preventDefault(); const v = $("#lock-input").value.trim(); if (v) unlock(v, false); };
     $("#lockbtn").onclick = lock;
-    document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => go(b.dataset.route));
     const stored = localStorage.getItem(LS_PW);
     if (stored) unlock(stored, true);
   }

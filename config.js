@@ -4,5 +4,6 @@
    lock screen checks DEV_PASSWORD -- handy for previewing before deploy. */
 window.CONFIG = {
   FUNCTION_URL: "", // e.g. https://<project-ref>.supabase.co/functions/v1/sync
-  DEV_PASSWORD: "2alexarae", // local-only fallback. The real password lives server-side once sync is wired up.
+  REQUIRE_PASSWORD: false, // set true to bring back the lock screen
+  DEV_PASSWORD: "2alexarae", // used only when REQUIRE_PASSWORD is true (and no backend)
 };
