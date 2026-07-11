@@ -13,7 +13,7 @@
   // lettuce = the in-app currency (earned by logging; spent to feed bunnies or buy toys/accessories)
   const cloverIco = '<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-3px"><path d="M12 22c-5.5-1.2-9-5.4-9-10 0-1.4 1.4-2.2 2.6-1.4.1-2.3 2.4-3.4 3.9-2.2C10.2 4.3 13.8 4.3 15 6.6c1.5-1.2 3.8-.1 3.9 2.2C20.1 8 21.5 8.8 21.5 10.2c0 4.4-3.4 8.6-9.5 11.8z" fill="#8fce5a" stroke="#5a9a34" stroke-width="1.2" stroke-linejoin="round"/><path d="M12 21c0-5 .3-8 1.2-11M12 21c0-4-.6-6-2-8.4" fill="none" stroke="#5a9a34" stroke-width="1.1" stroke-linecap="round"/></svg>';
   const closeIco = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-  const gearIco = '<svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align:-2px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/></svg>';
+  const gearIco = '<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-3px" fill="currentColor"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>';
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -221,7 +221,7 @@
       { key: "dinner", emoji: "🍽️", label: "Dinner", sub: "Ate a satisfying dinner" },
       { key: "snacks", emoji: "🍎", label: "Snacks", sub: "Snacks and treats" },
       { key: "water", emoji: "💧", label: "Hydration", sub: "Drank plenty of water" },
-      { key: "log", emoji: "📓", label: "Daily check-in", sub: "Weight, sleep, mood", optional: true },
+      { key: "log", emoji: "📓", label: "Daily check-in", sub: "Tap to log weight, sleep and mood", optional: true },
     ];
   }
   function pickBunny(rarity, preferNew) {
@@ -462,8 +462,6 @@
           ${aims.map((a) => `<div class="macro"><div class="v" style="font-size:.82rem">${esc(a.v)}</div><div class="k">${esc(a.k)}</div></div>`).join("")}
         </div>
       </div>
-
-      <button class="btn ghost" data-open-log="1" style="margin-bottom:8px">Log weight, BP and mood</button>
     `;
   };
 
@@ -973,17 +971,106 @@
     else { touch(); render(); }
     toast("Workout logged");
   }
+  const stravaBase = () => (CFG.STRAVA_WORKER_URL || "").replace(/\/+$/, "");
   function connectStrava() {
-    // Real Strava needs a small server-side token exchange (not wired yet).
-    $("#modal-root").innerHTML = `
-      <div class="modal-scrim" id="sv-scrim"><div class="award" style="text-align:left">
-        <h2 style="text-align:center">Connect Strava</h2>
-        <p class="msg" style="text-align:center">Automatic run tracking is almost ready. It needs a small one-time setup on the backend before it can turn on.</p>
-        <p class="tiny muted">Once it is live: link Strava once, and every run you record on your watch or phone flows straight into Bunny Meadow - no manual logging. Garmin works too (Garmin syncs to Strava).</p>
-        <button class="btn" id="sv-ok" style="margin-top:12px">Got it</button>
-      </div></div>`;
-    $("#sv-ok").onclick = () => ($("#modal-root").innerHTML = "");
-    $("#sv-scrim").onclick = (e) => { if (e.target.id === "sv-scrim") $("#modal-root").innerHTML = ""; };
+    const base = stravaBase();
+    // Backend not deployed yet: explain the one-time setup.
+    if (!base) {
+      $("#modal-root").innerHTML = `
+        <div class="modal-scrim" id="sv-scrim"><div class="award" style="text-align:left">
+          <h2 style="text-align:center">Connect Strava</h2>
+          <p class="msg" style="text-align:center">Automatic run tracking needs a small one-time setup before it can turn on.</p>
+          <p class="tiny muted">Once it is live you link Strava once, and every run from your watch or phone flows straight into Bunny Meadow. Garmin works too, since Garmin syncs to Strava. Setup steps are in the app's worker folder (worker/README).</p>
+          <button class="btn" id="sv-ok" style="margin-top:12px">Got it</button>
+        </div></div>`;
+      $("#sv-ok").onclick = () => ($("#modal-root").innerHTML = "");
+      $("#sv-scrim").onclick = (e) => { if (e.target.id === "sv-scrim") $("#modal-root").innerHTML = ""; };
+      return;
+    }
+    // Already linked: offer a manual sync or disconnect.
+    if (S.strava && S.strava.connected) {
+      const who = S.strava.athlete ? esc(S.strava.athlete) + "'s Strava" : "Strava";
+      $("#modal-root").innerHTML = `
+        <div class="modal-scrim" id="sv-scrim"><div class="award" style="text-align:left">
+          <button class="room-close" id="sv-close">${closeIco}</button>
+          <h2 style="text-align:center">Strava connected</h2>
+          <p class="msg" style="text-align:center">${who} is linked. New runs come in automatically when you open the app.</p>
+          <button class="btn" id="sv-sync">Sync now</button>
+          <button class="btn ghost small" id="sv-disc" style="margin-top:8px">Disconnect Strava</button>
+        </div></div>`;
+      const close = () => ($("#modal-root").innerHTML = "");
+      $("#sv-close").onclick = close;
+      $("#sv-scrim").onclick = (e) => { if (e.target.id === "sv-scrim") close(); };
+      $("#sv-sync").onclick = () => { close(); syncStrava(true); };
+      $("#sv-disc").onclick = () => { disconnectStrava(); close(); };
+      return;
+    }
+    // Not linked yet: hand off to Strava's consent screen via the Worker.
+    const ret = location.origin + location.pathname;
+    location.href = base + "/login?return=" + encodeURIComponent(ret);
+  }
+
+  // Read the ?strava=... the Worker appends when it sends the user back after authorizing.
+  function handleStravaReturn() {
+    const p = new URLSearchParams(location.search);
+    if (p.get("strava")) {
+      S.strava = { connected: true, linkId: p.get("strava"), athlete: p.get("athlete") || "", lastSync: 0 };
+      touch();
+      history.replaceState(null, "", location.pathname);
+      toast("Strava connected 🎉");
+      setTimeout(() => syncStrava(true), 500);
+      return true;
+    }
+    if (p.get("strava_error")) {
+      history.replaceState(null, "", location.pathname);
+      toast("Strava connection cancelled");
+    }
+    return false;
+  }
+
+  async function disconnectStrava() {
+    const base = stravaBase(), link = S.strava && S.strava.linkId;
+    S.strava = null; touch(); render();
+    toast("Strava disconnected");
+    if (base && link) { try { await fetch(base + "/disconnect?link=" + encodeURIComponent(link)); } catch (_) {} }
+  }
+
+  // Pull recent activities from the Worker and fold them into the workout log.
+  let stravaSyncing = false;
+  async function syncStrava(showToast) {
+    const base = stravaBase();
+    if (!base || !(S.strava && S.strava.connected) || stravaSyncing) return;
+    stravaSyncing = true;
+    try {
+      // look back from the last sync (or the plan start) so we never miss a run
+      const startTs = isoToNum(START) * 86400;
+      const after = Math.max(0, (S.strava.lastSync ? S.strava.lastSync - 3 * 86400 : startTs - 86400));
+      const res = await fetch(base + "/activities?link=" + encodeURIComponent(S.strava.linkId) + "&after=" + Math.floor(after));
+      if (!res.ok) throw new Error("bad");
+      const data = await res.json();
+      const acts = (data && data.activities) || [];
+      let added = 0;
+      acts.forEach((a) => {
+        const iso = (a.start_date_local || "").slice(0, 10);
+        if (!iso || dayIndex[iso] == null) return; // only days inside the plan window
+        S.workouts[iso] = S.workouts[iso] || [];
+        if (S.workouts[iso].some((w) => w.stravaId === a.id)) return; // already imported
+        const minutes = Math.round((a.moving_time || a.elapsed_time || 0) / 60);
+        const miles = a.distance ? Math.round((a.distance / 1609.34) * 10) / 10 : 0;
+        S.workouts[iso].push({ type: a.type || "Run", minutes, kcal: estKcal(9.8, minutes), miles, stravaId: a.id, name: a.name || "" });
+        // a synced run counts as moving that day (also feeds the 3-in-a-row streak)
+        const ds = dayState(iso);
+        ds.checks.movement = true; ds.granted.movement = true;
+        added++;
+      });
+      if (S.strava) S.strava.lastSync = Math.floor(Date.now() / 1000);
+      touch(); recomputeStreak(); render();
+      if (showToast) toast(added ? ("Synced " + added + " run" + (added === 1 ? "" : "s") + " from Strava 🏃") : "Strava is up to date");
+    } catch (e) {
+      if (showToast) toast("Couldn't reach Strava just now");
+    } finally {
+      stravaSyncing = false;
+    }
   }
 
   // ---------- plan intake: read an uploaded .xlsx/.xls/.csv into {meta, days} ----------
@@ -1434,7 +1521,6 @@
       render();
     });
     // open log
-    const ol = view.querySelector("[data-open-log]"); if (ol) ol.onclick = () => openLog(viewISO);
     // bunny tap -> open its room (dex + today strip). Meadow hoppers use drag below.
     view.querySelectorAll("[data-bunny]:not(.hopper)").forEach((el) => { if (el.dataset.bunny) el.onclick = () => openRoom(el.dataset.bunny); });
     bindMeadowDrag();
@@ -1503,8 +1589,14 @@
     $("#nav").classList.remove("hide");
     $("#brand-bunny").innerHTML = B.render(B.byId["biscuit"], 30);
     recomputeStreak();
+    const justLinked = handleStravaReturn();
     render();
     if (!S.starterDone && Object.keys(S.collection).length === 0) setTimeout(openStarter, 350);
+    // keep runs fresh: sync on open if linked (and we did not just do it on return)
+    else if (!justLinked && S.strava && S.strava.connected) {
+      const stale = !S.strava.lastSync || (Date.now() / 1000 - S.strava.lastSync) > 1800;
+      if (stale) setTimeout(() => syncStrava(false), 800);
+    }
   }
   // First-run: a big celebratory moment - open your first 3 bunnies
   function openStarter() {
