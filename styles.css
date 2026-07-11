@@ -24,18 +24,49 @@
 
   --radius: 22px;
   --radius-sm: 14px;
-  --shadow: 0 10px 30px -14px rgba(140, 116, 180, 0.45);
-  --shadow-soft: 0 6px 18px -10px rgba(140, 116, 180, 0.35);
-  --font: "Quicksand", ui-rounded, "SF Pro Rounded", system-ui, -apple-system,
+  --radius-lg: 28px;
+  /* softer, layered depth (HIG: subtle depth, not heavy drop shadows) */
+  --shadow: 0 12px 34px -16px rgba(120, 100, 165, 0.4);
+  --shadow-soft: 0 4px 16px -10px rgba(120, 100, 165, 0.3);
+  /* SF Rounded is Apple's system rounded face — friendly and HIG-native */
+  --font: "Quicksand", ui-rounded, "SF Pro Rounded", -apple-system, system-ui,
     "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(255, 255, 255, 0.6);
+}
+
+/* System dark mode (HIG: respect appearance). Keeps the pastel personality, dimmed. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17141f;
+    --bg-2: #241f30;
+    --card: #262130;
+    --ink: #ece7f4;
+    --ink-soft: #a99fba;
+    --ink-faint: #7a7189;
+    --line: #352e44;
+    --glass: rgba(38, 33, 48, 0.72);
+    --glass-line: rgba(255, 255, 255, 0.08);
+  }
+  body {
+    background:
+      radial-gradient(1200px 620px at 50% -12%, #2a2140 0%, transparent 60%),
+      radial-gradient(900px 520px at 100% 18%, #322036 0%, transparent 55%),
+      radial-gradient(900px 520px at 0% 42%, #1c2b2a 0%, transparent 55%),
+      var(--bg) !important;
+  }
+  .card { border-color: rgba(255, 255, 255, 0.05); }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { color-scheme: light dark; }
 html, body { margin: 0; padding: 0; }
 
 body {
   font-family: var(--font);
   color: var(--ink);
+  font-size: 17px;               /* HIG body size */
+  letter-spacing: -0.01em;
   background:
     radial-gradient(1200px 600px at 50% -10%, var(--lavender) 0%, transparent 60%),
     radial-gradient(900px 500px at 100% 20%, var(--blush) 0%, transparent 55%),
@@ -43,21 +74,22 @@ body {
     var(--bg);
   background-attachment: fixed;
   min-height: 100vh;
-  line-height: 1.5;
+  line-height: 1.47;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .app {
   max-width: 480px;
   margin: 0 auto;
-  padding: 0 16px calc(96px + env(safe-area-inset-bottom));
+  padding: 0 16px calc(104px + env(safe-area-inset-bottom));
   min-height: 100vh;
 }
 
-h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.15rem; }
-h3 { font-size: 1rem; }
+h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+h1 { font-size: 1.7rem; line-height: 1.15; }   /* large title */
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.02rem; }
 p { margin: 0; }
 button { font-family: inherit; cursor: pointer; border: none; }
 a { color: var(--lavender-deep); }
@@ -79,19 +111,27 @@ a { color: var(--lavender-deep); }
 .card.tint-lav { background: linear-gradient(160deg, #fff, var(--lavender) 220%); }
 
 /* ---------- Header / hero ---------- */
+/* Liquid Glass navigation layer: a translucent bar that floats over content. */
 .topbar {
+  position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 2px 6px;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+  margin: 0 -16px 2px;
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--glass-line);
 }
-.topbar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.topbar .brand svg { width: 30px; height: 30px; }
+.topbar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.05rem; }
+.topbar .brand span { display: inline-flex; }
+.topbar .brand svg, .topbar .brand img { width: 30px; height: 30px; }
 .clovers {
   display: inline-flex; align-items: center; gap: 5px;
-  background: #fff; border-radius: 999px; padding: 6px 12px;
-  box-shadow: var(--shadow-soft); font-weight: 700; font-size: 0.9rem;
+  background: var(--card); border-radius: 999px; padding: 7px 13px; min-height: 34px;
+  box-shadow: var(--shadow-soft); font-weight: 700; font-size: 0.92rem;
 }
 .iconbtn {
-  background: #fff; border-radius: 999px; width: 38px; height: 38px;
+  background: var(--card); border-radius: 999px; width: 40px; height: 40px;
   display: grid; place-items: center; box-shadow: var(--shadow-soft);
   font-size: 1.1rem; color: var(--ink-soft);
 }
@@ -104,12 +144,12 @@ a { color: var(--lavender-deep); }
 }
 .hero .training { font-size: 1.35rem; font-weight: 700; margin-top: 6px; }
 .hero .encourage { color: var(--ink-soft); font-style: italic; margin-top: 8px; font-size: 0.92rem; }
-.daynav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+.daynav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
 .daynav button {
-  background: #fff; box-shadow: var(--shadow-soft); border-radius: 999px;
-  width: 34px; height: 34px; color: var(--ink-soft); font-size: 1.1rem;
+  background: var(--card); box-shadow: var(--shadow-soft); border-radius: 999px;
+  width: 44px; height: 44px; color: var(--ink-soft); font-size: 1.15rem;
 }
-.daynav .today-btn { width: auto; padding: 0 14px; height: 34px; font-size: 0.82rem; font-weight: 700; color: var(--lavender-deep); }
+.daynav .today-btn { width: auto; padding: 0 18px; height: 44px; font-size: 0.86rem; font-weight: 700; color: var(--lavender-deep); }
 
 .phase-Base { background: var(--mint); color: #3c7a5c; }
 .phase-Build { background: var(--sky); color: #37698f; }
@@ -249,22 +289,32 @@ a { color: var(--lavender-deep); }
 .calweek .days { display: flex; gap: 3px; flex: 1; }
 .calday { flex: 1; height: 30px; border-radius: 7px; display: grid; place-items: center; font-size: 0.62rem; color: rgba(0,0,0,0.45); font-weight: 700; }
 
-/* ---------- Bottom nav ---------- */
+/* ---------- Bottom nav: floating Liquid Glass tab bar ---------- */
 .nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  display: flex; justify-content: center; gap: 4px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
+  display: flex; justify-content: center;
+  padding: 0 12px calc(10px + env(safe-area-inset-bottom));
+  pointer-events: none;
 }
-.nav .app-inner { max-width: 480px; width: 100%; margin: 0 auto; display: flex; justify-content: space-around; }
+.nav .app-inner {
+  max-width: 452px; width: 100%; margin: 0 auto; display: flex; justify-content: space-around;
+  pointer-events: auto;
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  border: 1px solid var(--glass-line);
+  border-radius: 26px;
+  padding: 8px 6px;
+  box-shadow: 0 8px 28px -12px rgba(90, 74, 130, 0.4);
+}
 .nav button {
-  background: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  color: var(--ink-faint); font-size: 0.66rem; font-weight: 700; padding: 4px 8px; border-radius: 12px;
+  background: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: var(--ink-faint); font-size: 0.64rem; font-weight: 700; padding: 5px 6px; border-radius: 14px;
+  min-height: 48px; flex: 1; transition: color 0.2s ease;
 }
-.nav button .ico { font-size: 1.25rem; }
+.nav button .ico { display: inline-flex; transition: transform 0.2s ease; }
 .nav button.on { color: var(--lavender-deep); }
-.nav button.on .ico { transform: translateY(-1px); }
+.nav button.on .ico { transform: translateY(-2px) scale(1.06); }
 
 /* ---------- Lock screen ---------- */
 .lock {
@@ -358,8 +408,9 @@ body[data-route="meadow"] .topbar { display: none; }
 body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bottom: 0; }
 .meadow-scene {
   position: relative; overflow: hidden;
-  height: calc(100vh - 60px - env(safe-area-inset-bottom));
+  height: calc(100vh - 82px - env(safe-area-inset-bottom));
   min-height: 460px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   background: linear-gradient(#bfe6f6 0%, #cdeaf2 38%, #d7f0dc 39%, #c4e6ad 72%, #b2dc95 100%);
 }
 .meadow-hud { position: absolute; top: 0; left: 0; right: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 14px 8px; }
