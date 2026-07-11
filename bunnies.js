@@ -9,22 +9,23 @@
 
   // id matches the PNG filenames (bunnies/<id>-<pose>.png). poses: how many
   // pose images exist (0 = sitting portrait, then laying, then sleeping).
+  // Named by real rabbit breed. `nick` kept for flavor (used in copy).
   const CATALOG = [
-    { id: "marshmallow", breed: "Marshmallow", kind: "White", rarity: "common", poses: 3 },
-    { id: "domino", breed: "Domino", kind: "Dutch", rarity: "common", poses: 3 },
-    { id: "biscuit", breed: "Biscuit", kind: "Holland Lop", rarity: "common", poses: 3 },
-    { id: "pip", breed: "Pip", kind: "Netherland Dwarf", rarity: "common", poses: 3 },
+    { id: "marshmallow", breed: "White", nick: "Marshmallow", rarity: "common", poses: 3 },
+    { id: "domino", breed: "Dutch", nick: "Domino", rarity: "common", poses: 3 },
+    { id: "biscuit", breed: "Holland Lop", nick: "Biscuit", rarity: "common", poses: 3 },
+    { id: "pip", breed: "Netherland Dwarf", nick: "Pip", rarity: "common", poses: 3 },
 
-    { id: "acorn", breed: "Acorn", kind: "Mini Lop", rarity: "uncommon", poses: 3 },
-    { id: "marmalade", breed: "Marmalade", kind: "Marmalade", rarity: "uncommon", poses: 3 },
-    { id: "frost", breed: "Frost", kind: "Himalayan", rarity: "uncommon", poses: 2 },
+    { id: "acorn", breed: "Mini Lop", nick: "Acorn", rarity: "uncommon", poses: 3 },
+    { id: "marmalade", breed: "Thrianta", nick: "Marmalade", rarity: "uncommon", poses: 3 },
+    { id: "frost", breed: "Himalayan", nick: "Frost", rarity: "uncommon", poses: 2 },
 
-    { id: "leo", breed: "Leo", kind: "Lionhead", rarity: "rare", poses: 2 },
-    { id: "cloud", breed: "Cloud", kind: "Angora", rarity: "rare", poses: 3 },
+    { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 2 },
+    { id: "cloud", breed: "Angora", nick: "Cloud", rarity: "rare", poses: 3 },
 
-    { id: "patch", breed: "Patch", kind: "Calico", rarity: "epic", poses: 3 },
+    { id: "patch", breed: "Harlequin", nick: "Patch", rarity: "epic", poses: 3 },
 
-    { id: "sunny", breed: "Sunny", kind: "Holland Lop", rarity: "legendary", poses: 1 },
+    { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "legendary", poses: 1 },
   ];
 
   const RARITY = {
@@ -94,8 +95,32 @@
   ];
   const ACC_BY_ID = Object.fromEntries(ACCESSORIES.map((a) => [a.id, a]));
 
+  // ---- toys: little props that decorate the meadow when owned ----
+  const TOY_ICON = {
+    carrot: () => `<g transform="translate(50 50)"><path d="M-14,-14 L18,18 C22,22 10,34 0,30 C-16,24 -26,10 -22,-6 C-24,-16 -18,-18 -14,-14 Z" fill="#f2934e" ${st(4)}/><path d="M-14,-14 C-22,-24 -14,-30 -8,-28 M-14,-14 C-18,-26 -8,-32 -4,-26 M-14,-14 C-6,-24 2,-22 0,-14" fill="none" stroke="#6cbf5a" stroke-width="5"/></g>`,
+    ball: () => `<g transform="translate(50 52)"><circle r="26" fill="#f7b8d0" ${st(4)}/><path d="M-26,0 h52 M0,-26 v52 M-18,-18 Q0,0 18,18 M18,-18 Q0,0 -18,18" fill="none" stroke="#e97aa0" stroke-width="3"/></g>`,
+    hay: () => `<g transform="translate(50 54)"><ellipse cx="0" cy="0" rx="30" ry="22" fill="#f4d98a" ${st(4)}/><path d="M-24,-8 h48 M-26,2 h52 M-22,12 h44" stroke="#d9b45e" stroke-width="3"/></g>`,
+    house: () => `<g transform="translate(50 52)"><path d="M-26,6 L0,-24 L26,6 Z" fill="#f4a9c0" ${st(4)}/><rect x="-20" y="6" width="40" height="22" rx="3" fill="#ffe4a8" ${st(4)}/><circle cx="0" cy="17" r="7" fill="#c98a5c" ${st(3)}/></g>`,
+    tunnel: () => `<g transform="translate(50 56)"><path d="M-30,14 A30,26 0 0 1 30,14 Z" fill="#a9d4f0" ${st(4)}/><ellipse cx="0" cy="14" rx="14" ry="12" fill="#5a7a99"/></g>`,
+    flowerpatch: () => `<g transform="translate(50 56)">${[[-18,4],[0,-6],[18,6]].map(([x,y])=>`<g transform="translate(${x} ${y})">${[0,72,144,216,288].map(a=>`<circle cx="${8*Math.cos(a*Math.PI/180)}" cy="${8*Math.sin(a*Math.PI/180)}" r="5.5" fill="#f7b8d0" ${st(2.5)}/>`).join("")}<circle r="4" fill="#ffe08a"/></g>`).join("")}</g>`,
+  };
+  function toySwatch(id, size) {
+    const dim = size ? ` width="${size}" height="${size}"` : "";
+    const fn = TOY_ICON[id];
+    return `<svg viewBox="0 0 100 100"${dim} xmlns="http://www.w3.org/2000/svg">${fn ? fn() : ""}</svg>`;
+  }
+  const TOYS = [
+    { id: "carrot", name: "Carrot", cost: 25 },
+    { id: "ball", name: "Play Ball", cost: 40 },
+    { id: "flowerpatch", name: "Flower Patch", cost: 60 },
+    { id: "hay", name: "Hay Bale", cost: 70 },
+    { id: "tunnel", name: "Tunnel", cost: 110 },
+    { id: "house", name: "Bunny House", cost: 160 },
+  ];
+  const TOY_BY_ID = Object.fromEntries(TOYS.map((t) => [t.id, t]));
+
   window.BUNNIES = {
-    CATALOG, RARITY, ACCESSORIES, ACC_BY_ID, byId, byRarity, render, accessorySwatch,
+    CATALOG, RARITY, ACCESSORIES, ACC_BY_ID, TOYS, TOY_BY_ID, byId, byRarity, render, accessorySwatch, toySwatch,
     sleeping(size) {
       const px = size || 150;
       return `<img src="${BASE}sleeping.png" width="${px}" height="${px}" alt="sleeping bunny" style="object-fit:contain;display:block" />`;
