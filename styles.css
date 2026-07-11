@@ -657,3 +657,34 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
 .plan-sample li { padding: 1px 0; }
 .plan-err { color: #b0374f; font-weight: 700; }
 @media (prefers-color-scheme: dark) { .plan-err { color: #f2a3b4; } }
+
+/* ---------- night mode: after 8pm local time the meadow sleeps ---------- */
+.moon, .stars { display: none; } /* hidden by day */
+.meadow-scene.night .meadow-world {
+  background: linear-gradient(#171a3a 0%, #202554 34%, #2a2f5e 38%, #24402f 39%, #1f3a2a 72%, #1a3324 100%);
+}
+.meadow-scene.night .sun, .meadow-scene.night .cloud, .meadow-scene.night .hills { display: none; }
+/* anchored to the left so it stays on screen (the world is wider than the viewport) */
+.meadow-scene.night .moon {
+  display: block; position: absolute; top: 16%; left: 22%; right: auto; width: 40px; height: 40px; border-radius: 50%;
+  background: radial-gradient(circle at 62% 40%, #fdf8e2, #ece3b6);
+  box-shadow: 0 0 22px #f3ecc855, inset -7px -3px 0 #d9cf9e44;
+}
+.meadow-scene.night .stars {
+  display: block; position: absolute; inset: 0;
+  background-image:
+    radial-gradient(1.6px 1.6px at 15% 22%, #fff, transparent),
+    radial-gradient(1.2px 1.2px at 40% 12%, #fff, transparent),
+    radial-gradient(1.6px 1.6px at 62% 26%, #fff, transparent),
+    radial-gradient(1.1px 1.1px at 80% 14%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 28% 34%, #fff, transparent),
+    radial-gradient(1.2px 1.2px at 92% 30%, #fff, transparent),
+    radial-gradient(1.3px 1.3px at 52% 40%, #fff, transparent);
+  opacity: 0.8; animation: twinkle 4.5s ease-in-out infinite;
+}
+@keyframes twinkle { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { .meadow-scene.night .stars { animation: none; } }
+.meadow-scene.night .tuft, .meadow-scene.night .flower { opacity: 0.3; filter: brightness(0.55); }
+.meadow-scene.night .hopper { filter: brightness(0.84) saturate(0.9); }
+.meadow-scene.night .meadow-tip { color: #d3e8da; text-shadow: 0 1px 3px rgba(0,0,0,0.55); }
+.meadow-scene.night .meadow-empty { color: #dcecdf; text-shadow: 0 1px 4px rgba(0,0,0,0.55); }

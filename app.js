@@ -90,7 +90,7 @@
   let woDate = null; // chosen date on the Workouts recorder (null = real today)
 
   function go(r, opts) {
-    if (r === "meadow" && route !== "meadow") meadowSeed = (meadowSeed + 1) % 997;
+    if (r === "meadow" && route !== "meadow") { meadowSeed = (meadowSeed + 1) % 997; wokeBunnies = new Set(); }
     route = r;
     if (opts && opts.meal) viewMeal = opts.meal;
     renderNav();
@@ -493,6 +493,11 @@
   // Vary each meadow bunny's pose (sitting / laying / asleep) - stable per render,
   // different across bunnies, and it reshuffles a bit each time the meadow opens.
   let meadowSeed = 0;
+  let wokeBunnies = new Set(); // bunnies the user nudged awake during this night-time meadow visit
+  // After 8pm (and before 6am) local time the meadow is night and bunnies sleep.
+  function isNight() { const h = new Date().getHours(); return h >= 20 || h < 6; }
+  // the "asleep" pose for a bunny: 2 (sleep) if it has one, else its calmest available pose
+  function sleepPose(b) { const n = (b && b.poses) || 1; return n >= 3 ? 2 : n - 1; }
   function meadowPose(id, i) {
     const b = B.byId[id]; const n = (b && b.poses) || 1;
     let h = meadowSeed + i * 7;
@@ -521,22 +526,24 @@
     const canFeedAll = hungry > 0 && S.clovers >= FEED_COST;
     // world gets wider as you collect more, enabling horizontal scroll + room to roam
     const worldW = Math.max(120, 60 + n * 12); // percent of the scene width
+    const night = isNight();
     return `
-      <div class="meadow-scene">
+      <div class="meadow-scene${night ? " night" : ""}">
         <div class="meadow-hud">
           <button class="hud-count" data-settings="1">${B.CATALOG.filter((b) => S.collection[b.id]).length}/${B.CATALOG.length} ${gearIco}</button>
           <button class="hud-shop" data-shop="1">${cloverIco} ${S.clovers} · Shop</button>
         </div>
         <div class="meadow-scroll" id="meadow-scroll">
           <div class="meadow-world" id="meadow-world" style="width:${worldW}%">
-            <div class="sky"><span class="cloud c1"></span><span class="cloud c2"></span><span class="sun"></span></div>
+            <div class="sky"><span class="cloud c1"></span><span class="cloud c2"></span><span class="sun"></span><span class="moon"></span><span class="stars"></span></div>
             <div class="hills"></div>
             <div class="grass-field">
               ${ownedToys.map((t, i) => { const s = toySpots[i % toySpots.length]; return `<div class="meadow-toy" style="left:${s.left}%;bottom:${s.bottom}%">${B.toySwatch(t, 56)}</div>`; }).join("")}
               ${n ? bunnies.map((b, i) => {
-                const pose = meadowPose(b.id, i);
+                const asleep = night && !wokeBunnies.has(b.id); // at night they sleep unless the user nudged them
+                const pose = asleep ? sleepPose(b) : meadowPose(b.id, i);
                 const sp = spotFor(b.id, i, n);
-                const active = pose === 0; // only sitting bunnies hop (laying/asleep stay still)
+                const active = !night && pose === 0; // only sitting bunnies hop by day; night is calm
                 const seed = hashId(b.id) + meadowSeed * 131 + i * 17;
                 const dur = (4.5 + (seed % 550) / 100).toFixed(2);  // 4.5-10s cycle, different per bunny
                 const delay = (-(seed % 800) / 100).toFixed(2);     // negative offset so they start out of phase
@@ -594,8 +601,11 @@
         el.classList.remove("dragging");
         const wasMoved = moved, savedPos = pos;
         sx = null; pid = null; dragging = false; moved = false; pos = null;
-        if (wasMoved && savedPos) { el.style.zIndex = ""; S.meadowPos[id] = savedPos; touch(); }
-        else if (!wasMoved) { openRoom(id); }
+        if (wasMoved && savedPos) {
+          el.style.zIndex = ""; S.meadowPos[id] = savedPos; touch();
+          // at night, a nudged bunny wakes up (re-render so it sits up instead of sleeping)
+          if (isNight() && !wokeBunnies.has(id)) { wokeBunnies.add(id); render(); }
+        } else if (!wasMoved) { openRoom(id); }
       };
       el.onpointerup = end; el.onpointercancel = end;
       // safety net: if focus/visibility is lost mid-gesture, drop it
