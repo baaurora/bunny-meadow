@@ -76,6 +76,7 @@
       mode: "easy",    // "easy" | "hard"
       workouts: {},    // iso -> [{type, minutes, kcal}]
       strava: null,    // connection placeholder (null until wired up)
+      meadowPos: {},   // bunny id -> {left, bottom} percent of the meadow world (dragged)
     };
   }
   function migrate(s) {
@@ -86,6 +87,7 @@
       days: s.days || {}, collection: s.collection || {},
       accessories: s.accessories || [], toys: s.toys || [],
       mode: s.mode || "easy", workouts: s.workouts || {}, strava: s.strava || null,
+      meadowPos: s.meadowPos || {},
     });
   }
   function equipped(id) { return (S.collection[id] && S.collection[id].room && S.collection[id].room.accessory) || null; }
@@ -414,54 +416,100 @@
     for (let k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) >>> 0;
     return h % n;
   }
-  function meadowSpots(n) {
-    const spots = [];
-    const cols = 3;
-    for (let i = 0; i < n; i++) {
-      const row = Math.floor(i / cols);
-      const inRow = i % cols;
-      const jitterX = ((i * 37) % 11) - 5;
-      const jitterY = ((i * 53) % 9) - 4;
-      const left = 14 + inRow * 30 + (row % 2 ? 8 : 0) + jitterX;
-      const bottom = 6 + row * 20 + jitterY;
-      spots.push({ left, bottom, delay: ((i * 1.37) % 6).toFixed(2) });
-    }
-    return spots;
+  // default scatter across the WIDE world (percent), staggered so no rigid grid
+  function defaultSpot(i, n) {
+    const cols = Math.max(3, Math.ceil(n / 2.2));
+    const row = i % 3, col = Math.floor(i / 3);
+    const jx = ((i * 37) % 13) - 6, jy = ((i * 53) % 11) - 5;
+    return { left: clamp(6 + col * (86 / Math.max(1, cols - 1)) + jx, 3, 94), bottom: clamp(8 + row * 24 + jy, 4, 74) };
+  }
+  function spotFor(id, i, n) {
+    const p = S.meadowPos && S.meadowPos[id];
+    return p && typeof p.left === "number" ? p : defaultSpot(i, n);
   }
 
   SCREENS.meadow = function () {
     const ids = activeBunnies().sort((a, b) => (S.collection[b].count) - (S.collection[a].count));
     const bunnies = ids.map((id) => B.byId[id]).filter(Boolean);
-    const spots = meadowSpots(bunnies.length);
+    const n = bunnies.length;
     const ownedToys = (S.toys || []).filter((t) => B.TOY_BY_ID[t]);
-    const toySpots = [{ left: 8, bottom: 4 }, { left: 84, bottom: 8 }, { left: 46, bottom: 2 }, { left: 22, bottom: 22 }, { left: 70, bottom: 24 }, { left: 90, bottom: 40 }];
+    const toySpots = [{ left: 6, bottom: 5 }, { left: 90, bottom: 8 }, { left: 40, bottom: 3 }, { left: 20, bottom: 46 }, { left: 66, bottom: 50 }, { left: 96, bottom: 40 }];
     const hungry = S.mode === "hard" ? ids.filter((id) => hungerState(id) === "hungry").length : 0;
     const canFeedAll = hungry > 0 && S.clovers >= FEED_COST;
+    // world gets wider as you collect more, enabling horizontal scroll + room to roam
+    const worldW = Math.max(120, 60 + n * 12); // percent of the scene width
     return `
       <div class="meadow-scene">
         <div class="meadow-hud">
-          <button class="hud-count" data-settings="1">${B.CATALOG.filter((b)=>S.collection[b.id]).length}/${B.CATALOG.length} ${gearIco}</button>
+          <button class="hud-count" data-settings="1">${B.CATALOG.filter((b) => S.collection[b.id]).length}/${B.CATALOG.length} ${gearIco}</button>
           <button class="hud-shop" data-shop="1">${cloverIco} ${S.clovers} · Shop</button>
         </div>
-        <div class="sky"><span class="cloud c1"></span><span class="cloud c2"></span><span class="sun"></span></div>
-        <div class="hills"></div>
-        <div class="grass-field">
-          ${ownedToys.map((t, i) => { const s = toySpots[i % toySpots.length]; return `<div class="meadow-toy" style="left:${s.left}%;bottom:${s.bottom}%">${B.toySwatch(t, 56)}</div>`; }).join("")}
-          ${bunnies.length ? bunnies.map((b, i) => `
-            <div class="hopper" data-bunny="${b.id}" style="left:${spots[i].left}%;bottom:${spots[i].bottom}%;animation-delay:${spots[i].delay}s;z-index:${100 - Math.round(spots[i].bottom)}">
-              <div class="bunny-shadow"></div>
-              ${S.mode === "hard" && hungerState(b.id) === "hungry" ? '<div class="hungry-tag">hungry</div>' : ""}
-              <div class="hop">${B.render(b, 76, { accessory: equipped(b.id), pose: meadowPose(b.id, i) })}</div>
-            </div>`).join("")
-            : `<div class="meadow-empty">Your meadow is quiet.<br/>Log your day and bunnies will hop in.</div>`}
-          <span class="tuft t1"></span><span class="tuft t2"></span><span class="tuft t3"></span><span class="tuft t4"></span>
-          <span class="flower f1"></span><span class="flower f2"></span><span class="flower f3"></span>
+        <div class="meadow-scroll" id="meadow-scroll">
+          <div class="meadow-world" id="meadow-world" style="width:${worldW}%">
+            <div class="sky"><span class="cloud c1"></span><span class="cloud c2"></span><span class="sun"></span></div>
+            <div class="hills"></div>
+            <div class="grass-field">
+              ${ownedToys.map((t, i) => { const s = toySpots[i % toySpots.length]; return `<div class="meadow-toy" style="left:${s.left}%;bottom:${s.bottom}%">${B.toySwatch(t, 56)}</div>`; }).join("")}
+              ${n ? bunnies.map((b, i) => {
+                const pose = meadowPose(b.id, i);
+                const sp = spotFor(b.id, i, n);
+                const active = pose === 0; // only sitting bunnies hop (laying/asleep stay still)
+                const seed = hashId(b.id) + meadowSeed * 131 + i * 17;
+                const dur = (4.5 + (seed % 550) / 100).toFixed(2);  // 4.5-10s cycle, different per bunny
+                const delay = (-(seed % 800) / 100).toFixed(2);     // negative offset so they start out of phase
+                return `<div class="hopper" data-bunny="${b.id}" style="left:${sp.left}%;bottom:${sp.bottom}%;z-index:${100 - Math.round(sp.bottom)}">
+                  <div class="bunny-shadow ${active ? "" : "still"}"></div>
+                  ${S.mode === "hard" && hungerState(b.id) === "hungry" ? '<div class="hungry-tag">hungry</div>' : ""}
+                  <div class="hop ${active ? "hopping" : "still"}" style="${active ? `animation-duration:${dur}s;animation-delay:${delay}s` : ""}">${B.render(b, 76, { accessory: equipped(b.id), pose })}</div>
+                </div>`;
+              }).join("")
+                : `<div class="meadow-empty">Your meadow is quiet.<br/>Log your day and bunnies will hop in.</div>`}
+              <span class="tuft t1"></span><span class="tuft t2"></span><span class="tuft t3"></span><span class="tuft t4"></span>
+              <span class="flower f1"></span><span class="flower f2"></span><span class="flower f3"></span>
+            </div>
+          </div>
         </div>
         ${hungry ? `<button class="feed-all ${canFeedAll ? "" : "off"}" data-feedall="1">Feed ${hungry} hungry ${hungry === 1 ? "bunny" : "bunnies"} · ${cloverIco}${hungry * FEED_COST}</button>` : ""}
-        <div class="meadow-tip">Tap a bunny to visit their room</div>
+        <div class="meadow-tip">Tap a bunny to visit · drag to move · swipe for more space</div>
       </div>
     `;
   };
+  function hashId(id) { let h = 0; for (let k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) >>> 0; return h; }
+
+  // Drag bunnies around the meadow; a tap (no drag) opens the room.
+  function bindMeadowDrag() {
+    const world = $("#meadow-world"); if (!world) return;
+    view.querySelectorAll(".hopper").forEach((el) => {
+      const id = el.dataset.bunny;
+      let sx = null, sy = null, dragging = false, moved = false, pos = null;
+      el.style.touchAction = "none";
+      el.onpointerdown = (e) => {
+        sx = e.clientX; sy = e.clientY; dragging = false; moved = false; pos = null;
+        try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      };
+      el.onpointermove = (e) => {
+        if (sx == null) return;
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!dragging && Math.hypot(dx, dy) > 8) { dragging = true; el.classList.add("dragging"); }
+        if (dragging) {
+          moved = true;
+          const r = world.getBoundingClientRect();
+          const left = clamp((e.clientX - r.left) / r.width * 100, 2, 97);
+          const bottom = clamp((r.bottom - e.clientY) / r.height * 100, 2, 84);
+          el.style.left = left + "%"; el.style.bottom = bottom + "%"; el.style.zIndex = 300;
+          pos = { left, bottom };
+        }
+      };
+      const end = () => {
+        if (sx == null) return;
+        el.classList.remove("dragging");
+        if (moved && pos) { S.meadowPos[id] = pos; touch(); }
+        else if (!moved) { openRoom(id); }
+        sx = null; dragging = false;
+      };
+      el.onpointerup = end; el.onpointercancel = end;
+    });
+  }
 
   SCREENS.dex = function () {
     const order = ["legendary", "epic", "rare", "uncommon", "common"];
@@ -693,7 +741,7 @@
     const curWeek = (dayByISO(planToday()) || {}).week;
     return `
       <div class="card tint-lav">
-        <p class="tiny" style="margin:0">The optional marathon coaching plan built from the workbook. Borrow from it freely. Your own log lives on the <b>Today</b> and <b>Workouts</b> tabs.</p>
+        <p style="margin:0;color:var(--ink);font-size:0.92rem">The optional marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> and <b>Workouts</b> tabs.</p>
       </div>
       <div class="card">
         <h2>Training calendar</h2>
@@ -847,17 +895,21 @@
     const have = S.collection[id];
     if (!have) return;
     if (!have.room) have.room = { accessory: null };
+    if (!have.room.theme) have.room.theme = "cozy";
     const rar = B.RARITY[b.rarity];
     const cur = have.room.accessory;
+    const theme = have.room.theme;
     const ownedAccs = B.ACCESSORIES.filter((a) => ownsAcc(a.id));
     render(); // keep meadow/dex fresh underneath
     $("#modal-root").innerHTML = `
       <div class="modal-scrim" id="room-scrim">
         <div class="room-card">
           <button class="room-close" id="room-close" aria-label="Close">${closeIco}</button>
-          <div class="room-scene">
+          <div class="room-scene bedroom theme-${theme}">
+            ${bedroomDecor()}
             <div class="room-bunny">${B.render(b, 150, { accessory: cur })}</div>
           </div>
+          <div class="theme-row">${ROOM_THEMES.map((t) => `<button class="theme-chip theme-${t.id} ${theme === t.id ? "sel" : ""}" data-theme="${t.id}" title="${t.name}"></button>`).join("")}</div>
           <div class="room-info">
             <h2>${esc(b.breed)}</h2>
             <div class="rar" style="background:${rar.color}33;color:${shade(rar.color)}">${rar.label}</div>
@@ -883,8 +935,24 @@
     });
     const fb = $("#modal-root").querySelector("[data-feed]");
     if (fb) fb.onclick = () => { if (feed(id)) { toast("Fed " + b.breed + " 🥬"); rerender(); } };
+    $("#modal-root").querySelectorAll("[data-theme]").forEach((el) => el.onclick = () => { have.room.theme = el.dataset.theme; touch(); rerender(); });
     const sh = $("#modal-root").querySelector("[data-shop]");
     if (sh) sh.onclick = () => openShop(id, "accessories");
+  }
+  const ROOM_THEMES = [
+    { id: "cozy", name: "Cozy" }, { id: "forest", name: "Forest" }, { id: "candy", name: "Candy" },
+    { id: "sky", name: "Sky" }, { id: "night", name: "Night" },
+  ];
+  function bedroomDecor() {
+    return `
+      <div class="rm-window"><i></i><i></i></div>
+      <div class="rm-frame"></div>
+      <div class="rm-shelf"><span></span><span></span></div>
+      <div class="rm-plant"><b class="pot"></b><b class="leaf a"></b><b class="leaf b"></b><b class="leaf c"></b></div>
+      <div class="rm-lamp"><b class="head"></b></div>
+      <div class="rm-rug"></div>
+      <div class="rm-bed"><b class="pillow"></b></div>
+    `;
   }
   function hungerBadge(id) {
     const st = hungerState(id);
@@ -980,8 +1048,9 @@
     });
     // open log
     const ol = view.querySelector("[data-open-log]"); if (ol) ol.onclick = () => openLog(viewISO);
-    // bunny tap -> open its room
-    view.querySelectorAll("[data-bunny]").forEach((el) => { if (el.dataset.bunny) el.onclick = () => openRoom(el.dataset.bunny); });
+    // bunny tap -> open its room (dex + today strip). Meadow hoppers use drag below.
+    view.querySelectorAll("[data-bunny]:not(.hopper)").forEach((el) => { if (el.dataset.bunny) el.onclick = () => openRoom(el.dataset.bunny); });
+    bindMeadowDrag();
     // shop button (meadow HUD)
     view.querySelectorAll("[data-shop]").forEach((el) => el.onclick = () => openShop(null));
     // simple route jumps (back buttons, week chip -> plan, etc.)

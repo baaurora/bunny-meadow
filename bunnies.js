@@ -20,12 +20,12 @@
     { id: "marmalade", breed: "Thrianta", nick: "Marmalade", rarity: "uncommon", poses: 3 },
     { id: "frost", breed: "Himalayan", nick: "Frost", rarity: "uncommon", poses: 2 },
 
-    { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 2 },
+    { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 1 },
     { id: "cloud", breed: "Angora", nick: "Cloud", rarity: "rare", poses: 3 },
 
     { id: "patch", breed: "Harlequin", nick: "Patch", rarity: "epic", poses: 3 },
 
-    { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "legendary", poses: 1 },
+    { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "legendary", poses: 2 },
   ];
 
   const RARITY = {
@@ -56,6 +56,9 @@
     star: () => `<g transform="translate(50 48)"><path d="M0,-30 L9,-9 L31,-9 L13,5 L20,28 L0,14 L-20,28 L-13,5 L-31,-9 L-9,-9 Z" fill="#ffd76a" ${st(3.5)}/></g>`,
     bell: () => `<g transform="translate(50 48)"><path d="M-26,-2 Q0,16 26,-2 L22,10 Q0,22 -22,10 Z" fill="#ef97b3" ${st(3.5)}/><circle cx="0" cy="16" r="12" fill="#ffd76a" ${st(4)}/><circle cx="0" cy="18" r="3" fill="${OUT}"/></g>`,
     medal: () => `<g transform="translate(50 44)"><path d="M-14,-22 L-4,10 M14,-22 L4,10" stroke="#f2a9c0" stroke-width="6"/><circle cx="0" cy="20" r="18" fill="#ffd76a" ${st(4)}/><path d="M0,10 L3.5,17 L11,17 L5,22 L7,30 L0,25 L-7,30 L-5,22 L-11,17 L-3.5,17 Z" fill="#e9a93d"/></g>`,
+    monocle: () => `<g><circle cx="42" cy="54" r="17" fill="#ffffff" fill-opacity="0.25" ${st(5)}/><path d="M42,71 q-4,14 4,20" fill="none" ${st(3)}/></g>`,
+    tophat: () => `<g><ellipse cx="50" cy="60" rx="40" ry="9" fill="#3a3340" ${st(4)}/><rect x="28" y="14" width="44" height="46" rx="4" fill="#3a3340" ${st(4)}/><rect x="26" y="50" width="48" height="9" rx="4" fill="#c8b6ef" ${st(3)}/></g>`,
+    tiara: () => `<g transform="translate(50 52)"><path d="M-30,10 C-24,-8 -16,-8 -12,4 C-8,-14 8,-14 12,4 C16,-8 24,-8 30,10 Z" fill="#ffe08a" ${st(4)}/><circle cx="0" cy="-9" r="5" fill="#a9d4f0" ${st(3)}/><circle cx="-15" cy="2" r="3.5" fill="#f7b8d0" ${st(2.5)}/><circle cx="15" cy="2" r="3.5" fill="#f7b8d0" ${st(2.5)}/></g>`,
   };
   function accessorySwatch(id, size) {
     const dim = size ? ` width="${size}" height="${size}"` : "";
@@ -84,12 +87,15 @@
     { id: "scarf", name: "Cozy Scarf", cost: 40 },
     { id: "glasses", name: "Round Glasses", cost: 45 },
     { id: "star", name: "Star Clip", cost: 45 },
+    { id: "monocle", name: "Monocle", cost: 50 },
     { id: "bell", name: "Bell Collar", cost: 55 },
     { id: "sunglasses", name: "Sunglasses", cost: 60 },
     { id: "flowercrown", name: "Flower Crown", cost: 75 },
     { id: "headphones", name: "Headphones", cost: 80 },
     { id: "sunhat", name: "Sun Hat", cost: 90 },
     { id: "partyhat", name: "Party Hat", cost: 100 },
+    { id: "tophat", name: "Top Hat", cost: 120 },
+    { id: "tiara", name: "Tiara", cost: 150 },
     { id: "medal", name: "Gold Medal", cost: 140 },
     { id: "crown", name: "Royal Crown", cost: 200 },
   ];

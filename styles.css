@@ -411,10 +411,12 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
   height: calc(100vh - 82px - env(safe-area-inset-bottom));
   min-height: 460px;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  background: linear-gradient(#bfe6f6 0%, #cdeaf2 38%, #d7f0dc 39%, #c4e6ad 72%, #b2dc95 100%);
 }
-.meadow-hud { position: absolute; top: 0; left: 0; right: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 14px 8px; }
-.hud-count { background: rgba(255,255,255,0.85); border-radius: 999px; padding: 6px 12px; font-size: 0.8rem; font-weight: 700; color: var(--ink); box-shadow: var(--shadow-soft); }
+.meadow-scroll { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; border-radius: inherit; }
+.meadow-scroll::-webkit-scrollbar { display: none; }
+.meadow-world { position: relative; height: 100%; min-width: 100%; background: linear-gradient(#bfe6f6 0%, #cdeaf2 38%, #d7f0dc 39%, #c4e6ad 72%, #b2dc95 100%); }
+.meadow-hud { position: absolute; top: 0; left: 0; right: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 14px 8px; pointer-events: none; }
+.meadow-hud > * { pointer-events: auto; }
 .hud-shop { display: inline-flex; align-items: center; gap: 5px; background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 0.82rem; font-weight: 700; color: var(--ink); box-shadow: var(--shadow-soft); }
 .sky { position: absolute; inset: 0 0 auto 0; height: 40%; }
 .sun { position: absolute; top: 12%; right: 16%; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #fff3bf, #ffe08a); box-shadow: 0 0 24px #ffe6a066; }
@@ -431,19 +433,23 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
   radial-gradient(circle at 20% 90%, #a9d489 0 6px, transparent 7px),
   radial-gradient(circle at 70% 96%, #a9d489 0 6px, transparent 7px),
   radial-gradient(circle at 45% 84%, #b6dc96 0 5px, transparent 6px); opacity: 0.5; }
-.hopper { position: absolute; width: 76px; transform: translateX(-50%); }
-/* Mostly still, with one gentle hop every ~7s (staggered per bunny). */
-.hopper .hop { transform-origin: 50% 100%; animation: idlehop 7s ease-in-out infinite; will-change: transform; }
-.hopper .bunny-shadow { position: absolute; left: 50%; bottom: 2px; width: 46px; height: 11px; margin-left: -23px; background: rgba(60,90,50,0.2); border-radius: 50%; animation: idleshadow 7s ease-in-out infinite; }
+.hopper { position: absolute; width: 76px; transform: translateX(-50%); cursor: grab; touch-action: none; }
+.hopper.dragging { cursor: grabbing; }
+.hopper.dragging .hop { animation: none !important; transform: scale(1.1); }
+/* Only SITTING bunnies hop, each on its own random cycle (duration+delay set inline). */
+.hopper .hop { transform-origin: 50% 100%; will-change: transform; }
+.hopper .hop.hopping { animation-name: idlehop; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.hopper .hop.still { animation: none; }
+.hopper .bunny-shadow { position: absolute; left: 50%; bottom: 2px; width: 46px; height: 11px; margin-left: -23px; background: rgba(60,90,50,0.2); border-radius: 50%; }
+.hopper .bunny-shadow.still { opacity: 0.26; }
 @keyframes idlehop {
-  0%, 82% { transform: translateY(0) scaleX(1) scaleY(1); }
-  85% { transform: translateY(0) scaleX(1.07) scaleY(0.9); }
-  90% { transform: translateY(-22%) scaleX(0.95) scaleY(1.07); }
-  95% { transform: translateY(0) scaleX(1.07) scaleY(0.9); }
+  0%, 84% { transform: translateY(0) scaleX(1) scaleY(1); }
+  87% { transform: translateY(0) scaleX(1.08) scaleY(0.88); }
+  92% { transform: translateY(-24%) scaleX(0.94) scaleY(1.08); }
+  97% { transform: translateY(0) scaleX(1.08) scaleY(0.9); }
   100% { transform: translateY(0) scaleX(1) scaleY(1); }
 }
-@keyframes idleshadow { 0%, 82%, 100% { transform: scale(1); opacity: 0.3; } 90% { transform: scale(0.72); opacity: 0.16; } }
-@media (prefers-reduced-motion: reduce) { .hopper .hop, .hopper .bunny-shadow { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hopper .hop.hopping { animation: none; } }
 .meadow-empty { position: absolute; left: 50%; top: 40%; transform: translate(-50%,-50%); text-align: center; color: #4f7a58; font-weight: 700; width: 80%; }
 .meadow-tip { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 0.75rem; color: #4f7a58; z-index: 5; }
 .tuft { position: absolute; width: 0; height: 0; }
@@ -457,13 +463,47 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
 /* ---------- bunny room ---------- */
 .room-card { background: var(--card); border-radius: 26px; width: 100%; max-width: 360px; box-shadow: var(--shadow); overflow: hidden; position: relative; max-height: 88vh; display: flex; flex-direction: column; animation: pop 0.3s cubic-bezier(.2,1.3,.5,1); }
 .room-close, .shop-close-note { position: absolute; top: 12px; right: 12px; z-index: 5; background: rgba(255,255,255,0.8); border-radius: 50%; width: 32px; height: 32px; display: grid; place-items: center; color: var(--ink-soft); box-shadow: var(--shadow-soft); }
-.room-scene { height: 190px; display: grid; place-items: center; position: relative;
-  background:
-    radial-gradient(120% 70% at 50% 120%, #e7d3b8 0 60%, transparent 61%),
-    linear-gradient(#f3e6d2 0%, #f6ede0 55%, #e9d6bd 56%, #e2caac 100%); }
-.room-scene::before { content: ""; position: absolute; bottom: 18px; left: 50%; width: 130px; height: 30px; transform: translateX(-50%); background: #d9b98f; border-radius: 50%; opacity: 0.6; }
-.room-scene .room-window { position: absolute; top: 18px; left: 22px; width: 54px; height: 46px; border-radius: 8px; background: linear-gradient(#bfe6f6, #d7f0dc); border: 3px solid #caa982; }
-.room-bunny { position: relative; z-index: 2; filter: drop-shadow(0 8px 10px rgba(120,90,60,0.2)); }
+/* ---------- themed bedroom ---------- */
+.room-scene.bedroom {
+  height: 216px; display: grid; place-items: end center; position: relative; overflow: hidden;
+  background: linear-gradient(to bottom, var(--wall, #f2e3cf) 0 60%, var(--floor, #e0c6a4) 60% 100%);
+}
+.theme-cozy { --wall: #f2e3cf; --floor: #e0c6a4; --accent: #f2a9c0; --sky1: #bfe6f6; --sky2: #dff0dc; --frame: #caa982; --wood: #c79a63; }
+.theme-forest { --wall: #dcefd9; --floor: #cbe0bf; --accent: #8fc472; --sky1: #cdeacb; --sky2: #a9d4a0; --frame: #8aa87e; --wood: #9a8a5e; }
+.theme-candy { --wall: #fbe0ec; --floor: #f6d0e0; --accent: #ef97b3; --sky1: #ffe0ef; --sky2: #ffd0e6; --frame: #e59ab8; --wood: #d99ab0; }
+.theme-sky { --wall: #dcecfa; --floor: #cfe0f2; --accent: #8fb7f2; --sky1: #bfe6f6; --sky2: #dff0fa; --frame: #9ab6d9; --wood: #9aa8c0; }
+.theme-night { --wall: #2e2a44; --floor: #3a3552; --accent: #c8b6ef; --sky1: #1c2140; --sky2: #2a2450; --frame: #4a4468; --wood: #45405e; }
+.theme-night .rm-window { box-shadow: inset 0 0 12px #ffe08a55; }
+.room-scene .rm-window { position: absolute; top: 20px; left: 22px; width: 58px; height: 50px; border-radius: 9px; background: linear-gradient(var(--sky1), var(--sky2)); border: 4px solid var(--frame); overflow: hidden; }
+.room-scene .rm-window i { position: absolute; background: var(--frame); }
+.room-scene .rm-window i:first-child { left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; }
+.room-scene .rm-window i:last-child { top: 50%; left: 0; right: 0; height: 3px; margin-top: -1.5px; }
+.theme-night .rm-window::after, .theme-sky .rm-window::before { content: ""; position: absolute; }
+.theme-night .rm-window::after { top: 8px; right: 8px; width: 14px; height: 14px; border-radius: 50%; background: #ffe9a8; box-shadow: -18px 6px 0 -5px #fff, -8px 20px 0 -6px #fff; }
+.room-scene .rm-frame { position: absolute; top: 26px; right: 26px; width: 34px; height: 28px; border-radius: 4px; background: var(--sky2); border: 4px solid var(--frame); }
+.room-scene .rm-frame::after { content: "🐰"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; }
+.room-scene .rm-shelf { position: absolute; top: 64px; right: 24px; width: 40px; height: 4px; background: var(--wood); border-radius: 2px; }
+.room-scene .rm-shelf span { position: absolute; bottom: 3px; width: 8px; height: 12px; border-radius: 2px; }
+.room-scene .rm-shelf span:first-child { left: 6px; background: var(--accent); }
+.room-scene .rm-shelf span:last-child { left: 20px; background: var(--sky1); height: 9px; }
+.room-scene .rm-plant { position: absolute; bottom: 4px; left: 14px; width: 26px; height: 44px; }
+.room-scene .rm-plant .pot { position: absolute; bottom: 0; left: 4px; width: 18px; height: 16px; background: var(--wood); border-radius: 3px 3px 6px 6px; }
+.room-scene .rm-plant .leaf { position: absolute; width: 12px; height: 20px; background: #8fc472; border-radius: 60% 60% 60% 60%/80% 80% 40% 40%; bottom: 12px; }
+.room-scene .rm-plant .leaf.a { left: 2px; transform: rotate(-24deg); }
+.room-scene .rm-plant .leaf.b { left: 8px; }
+.room-scene .rm-plant .leaf.c { left: 14px; transform: rotate(24deg); }
+.room-scene .rm-lamp { position: absolute; bottom: 4px; right: 16px; width: 4px; height: 62px; background: var(--wood); }
+.room-scene .rm-lamp .head { position: absolute; top: -8px; left: -10px; width: 24px; height: 14px; border-radius: 12px 12px 4px 4px; background: var(--accent); }
+.room-scene .rm-rug { position: absolute; bottom: 8px; left: 50%; width: 150px; height: 34px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(var(--accent) 0 40%, color-mix(in srgb, var(--accent) 60%, #fff) 41% 70%, var(--accent) 71%); opacity: 0.85; }
+.room-scene .rm-bed { position: absolute; bottom: 14px; left: 50%; width: 92px; height: 26px; transform: translateX(-50%); background: color-mix(in srgb, var(--accent) 55%, #fff); border-radius: 14px; }
+.room-scene .rm-bed .pillow { position: absolute; top: -6px; left: 10px; width: 26px; height: 14px; border-radius: 8px; background: #fff; }
+.room-bunny { position: relative; z-index: 3; margin-bottom: 12px; filter: drop-shadow(0 8px 10px rgba(120,90,60,0.22)); }
+.theme-row { display: flex; justify-content: center; gap: 8px; padding: 10px 0 2px; }
+.theme-chip { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-shadow: var(--shadow-soft); }
+.theme-chip.theme-cozy { background: #e0c6a4; } .theme-chip.theme-forest { background: #a9d4a0; }
+.theme-chip.theme-candy { background: #f6d0e0; } .theme-chip.theme-sky { background: #cfe0f2; }
+.theme-chip.theme-night { background: #3a3552; }
+.theme-chip.sel { border-color: var(--lavender-deep); transform: scale(1.12); }
 .room-info { text-align: center; padding: 12px 16px 4px; }
 .room-info h2 { margin-bottom: 4px; }
 .room-info .rar { font-size: 0.78rem; padding: 3px 12px; border-radius: 999px; display: inline-block; font-weight: 700; margin: 0 6px; }
