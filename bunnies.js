@@ -20,12 +20,13 @@
     { id: "marmalade", breed: "Thrianta", nick: "Marmalade", rarity: "uncommon", poses: 3 },
     { id: "frost", breed: "Himalayan", nick: "Frost", rarity: "uncommon", poses: 2 },
 
-    { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 1 },
+    { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 3 },
     { id: "cloud", breed: "Angora", nick: "Cloud", rarity: "rare", poses: 3 },
+    { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "rare", poses: 2 },
 
     { id: "patch", breed: "Harlequin", nick: "Patch", rarity: "epic", poses: 3 },
 
-    { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "legendary", poses: 2 },
+    { id: "sylvia", breed: "Lionhead", nick: "Sylvia", rarity: "legendary", poses: 3 },
   ];
 
   const RARITY = {

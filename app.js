@@ -37,6 +37,13 @@
     const dt = new Date(y, m - 1, d);
     return dt.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   }
+  // step an ISO date by whole days, staying inside the plan window
+  function shiftISO(iso, delta) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d + delta);
+    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    return dayIndex[next] != null ? next : iso;
+  }
   const RUN_TYPES = ["Long Run", "Workout", "Easy Run", "Race"];
   const MOODS = [
     { e: "😄", label: "Great" }, { e: "🙂", label: "Good" }, { e: "😐", label: "Okay" },
@@ -56,6 +63,7 @@
   // Which bottom-nav tab lights up for a given route (sub-pages map to a parent).
   const NAV_FOR = { today: "today", plan: "plan", food: "food", meal: "food", meadow: "meadow", dex: "dex" };
   let planTab = "workouts"; // Plan page slide-bar: workouts | trends | marathon
+  let woDate = null; // chosen date on the Workouts recorder (null = real today)
 
   function go(r, opts) {
     if (r === "meadow" && route !== "meadow") meadowSeed = (meadowSeed + 1) % 997;
@@ -77,6 +85,8 @@
       workouts: {},    // iso -> [{type, minutes, kcal}]
       strava: null,    // connection placeholder (null until wired up)
       meadowPos: {},   // bunny id -> {left, bottom} percent of the meadow world (dragged)
+      userMeals: [],   // recipes the user added
+      starterDone: false,
     };
   }
   function migrate(s) {
@@ -87,7 +97,7 @@
       days: s.days || {}, collection: s.collection || {},
       accessories: s.accessories || [], toys: s.toys || [],
       mode: s.mode || "easy", workouts: s.workouts || {}, strava: s.strava || null,
-      meadowPos: s.meadowPos || {},
+      meadowPos: s.meadowPos || {}, userMeals: s.userMeals || [], starterDone: !!s.starterDone,
     });
   }
   function equipped(id) { return (S.collection[id] && S.collection[id].room && S.collection[id].room.accessory) || null; }
@@ -251,31 +261,59 @@
     }
   }
 
-  // ---------- award modal ----------
+  // the name to show for a collected bunny (custom name, else its default nick)
+  function bunnyName(id) { const c = S.collection[id], b = B.byId[id]; return (c && c.name) || (b && b.nick) || (b && b.breed) || "Bunny"; }
+
+  // confetti burst - a big celebratory moment
+  function confetti(amount) {
+    const layer = document.createElement("div");
+    layer.className = "confetti-layer";
+    const cols = ["#f7b8d0", "#c8b6ef", "#a9d4f0", "#ffd76a", "#bfe5c8", "#f4a9c0"];
+    const n = amount || 60;
+    let html = "";
+    for (let i = 0; i < n; i++) {
+      const l = (i * 97) % 100, c = cols[i % cols.length];
+      const d = ((i * 53) % 60) / 100, dur = 1.4 + ((i * 31) % 90) / 100, sz = 6 + (i % 4) * 2;
+      const rot = (i * 47) % 360;
+      html += `<span style="left:${l}%;background:${c};width:${sz}px;height:${sz + 3}px;animation-delay:${d}s;animation-duration:${dur}s;transform:rotate(${rot}deg)"></span>`;
+    }
+    layer.innerHTML = html;
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 3200);
+  }
+
+  // ---------- award modal (with naming on unlock + confetti) ----------
   function flushAwards() {
     if (!awardQueue.length) { $("#modal-root").innerHTML = ""; return; }
     const { bunny, isNew } = awardQueue[0];
     const rar = B.RARITY[bunny.rarity];
     const more = awardQueue.length - 1;
-    const msg = isNew
-      ? "hopped into your meadow for the first time!"
-      : "came back to say hi 🍀";
+    const legendary = bunny.rarity === "legendary";
+    if (isNew) confetti(legendary ? 110 : rar.label === "Common" ? 40 : 70);
+    const nm = bunnyName(bunny.id);
     $("#modal-root").innerHTML = `
       <div class="modal-scrim" id="award-scrim">
-        <div class="award">
+        <div class="award ${legendary ? "legendary" : ""}">
           <div class="spark">✧ ✦ ✧</div>
-          <div class="art">${B.render(bunny, 150)}</div>
-          ${isNew ? '<div class="newtag">NEW BUNNY</div>' : ""}
-          <h2>${esc(bunny.breed)}</h2>
-          <div class="rar" style="background:${rar.color}33;color:${shade(rar.color)}">${rar.label}</div>
-          <p class="msg">A ${esc(bunny.breed)} bunny ${msg}</p>
-          <button class="btn" id="award-ok">${more ? "Next 🐇" : "Yay! 🌸"}</button>
+          <div class="art pop-in">${B.render(bunny, 150)}</div>
+          ${isNew ? `<div class="newtag">${legendary ? "LEGENDARY BUNNY" : "NEW BUNNY"}</div>` : ""}
+          ${isNew ? `<p class="msg" style="margin:10px 0 4px">A ${esc(bunny.breed)} hopped into your meadow! Give them a name.</p>
+              <input id="award-name" class="name-input" value="${esc(nm)}" maxlength="16" />`
+            : `<h2>${esc(nm)}</h2><div class="rar" style="background:${rar.color}33;color:${shade(rar.color)}">${rar.label}</div>
+              <p class="msg">${esc(nm)} the ${esc(bunny.breed)} came back to say hi 🥬</p>`}
+          <button class="btn" id="award-ok">${isNew ? "Welcome them 🌸" : (more ? "Next 🐇" : "Yay! 🌸")}</button>
           ${more ? `<div class="queue">+${more} more waiting</div>` : ""}
         </div>
       </div>`;
-    const close = () => { awardQueue.shift(); flushAwards(); };
+    const close = () => {
+      const inp = $("#award-name");
+      if (inp) { const v = inp.value.trim(); if (v) { S.collection[bunny.id].name = v; touch(); } }
+      awardQueue.shift(); flushAwards();
+      if (!awardQueue.length) render();
+    };
     $("#award-ok").onclick = close;
-    $("#award-scrim").onclick = (e) => { if (e.target.id === "award-scrim") close(); };
+    const inp = $("#award-name"); if (inp) inp.onkeydown = (e) => { if (e.key === "Enter") close(); };
+    $("#award-scrim").onclick = (e) => { if (e.target.id === "award-scrim" && !$("#award-name")) close(); };
   }
   function shade(hex) {
     const n = parseInt(hex.slice(1), 16);
@@ -400,7 +438,7 @@
           <span class="muted tiny">${ids.length ? ids.length + " discovered" : "keep checking!"}</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;min-height:60px;align-items:center">
-          ${shown.length ? shown.map((id) => `<div class="strip-bunny" data-bunny="${id}" style="width:58px" title="${esc(B.byId[id].breed)}">${B.render(B.byId[id], 58, { accessory: equipped(id) })}</div>`).join("")
+          ${shown.length ? shown.map((id) => `<div class="strip-bunny" data-bunny="${id}" style="width:58px" title="${esc(bunnyName(id))}">${B.render(B.byId[id], 58, { accessory: equipped(id) })}</div>`).join("")
             : '<span class="muted tiny">Check something off to meet a bunny</span>'}
         </div>
       </div>`;
@@ -532,7 +570,8 @@
             ${have && have.count > 1 ? `<span class="count">×${have.count}</span>` : ""}
             ${wandered ? '<span class="wandtag">wandered</span>' : ""}
             <div class="art">${B.render(b, 78, { accessory: have ? equipped(b.id) : null })}</div>
-            <div class="nm">${have ? esc(b.breed) : "???"}</div>
+            <div class="nm">${have ? esc(bunnyName(b.id)) : "???"}</div>
+            <div class="dexbreed tiny muted">${have ? esc(b.breed) : ""}</div>
             <div class="rar" style="background:${rar.color}44;color:${shade(rar.color)}">${rar.label}</div>
           </div>`;
         }).join("")}
@@ -607,25 +646,33 @@
   const chevron = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
   const backArrow = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>';
 
+  function allMeals() {
+    const mine = (S.userMeals || []).map((m) => Object.assign({}, m, { mine: true }));
+    return mine.concat(PLAN.meals);
+  }
+  function mealByName(name) { return allMeals().find((m) => m.name === name); }
+
   SCREENS.food = function () {
     const mealFilter = SCREENS.food._filter || "All";
     const q = (SCREENS.food._q || "").toLowerCase();
-    const types = ["All", "Breakfast", "Lunch", "Dinner", "Snack", "Fuel"];
-    const meals = PLAN.meals.filter((m) =>
-      (mealFilter === "All" || m.type === mealFilter) &&
+    const hasMine = (S.userMeals || []).length > 0;
+    const types = ["All"].concat(hasMine ? ["Yours"] : [], ["Breakfast", "Lunch", "Dinner", "Snack", "Fuel"]);
+    const meals = allMeals().filter((m) =>
+      (mealFilter === "All" || (mealFilter === "Yours" ? m.mine : m.type === mealFilter)) &&
       (!q || m.name.toLowerCase().includes(q) || (m.why || "").toLowerCase().includes(q)));
 
     return `
-      <div class="hero"><h1>Food</h1><div class="muted">Meal ideas from the coaching plan. Tap one for its recipe.</div></div>
+      <div class="hero"><h1>Food</h1><div class="muted">Meal ideas from the plan, plus your own recipes.</div></div>
+      <button class="btn ghost" data-recipe-new="1" style="margin-bottom:10px">+ Add your own recipe</button>
       <input class="searchbar" id="meal-search" placeholder="Search meals..." value="${esc(SCREENS.food._q || "")}" />
       <div class="filterrow">${types.map((t) => `<button class="mfilter ${t === mealFilter ? "on" : ""}" data-mf="${t}">${t}</button>`).join("")}</div>
       <div class="meal-list">
         ${meals.map((m) => `
           <button class="meal-card" data-meal="${esc(m.name)}">
             <div class="meal-card-main">
-              <div class="meal-card-top"><b>${esc(m.name)}</b><span class="typebadge type-${(m.type || "").toLowerCase()}">${esc(m.type)}</span></div>
-              <div class="tiny muted">${m.cal} cal · ${m.protein}g protein · ${m.carbs}g carbs · ${m.fiber}g fiber</div>
-              <div class="tiny meal-why">${esc(m.why || "")}</div>
+              <div class="meal-card-top"><b>${esc(m.name)}</b>${m.mine ? '<span class="typebadge type-yours">Yours</span>' : ""}<span class="typebadge type-${(m.type || "").toLowerCase()}">${esc(m.type)}</span></div>
+              ${m.cal != null ? `<div class="tiny muted">${m.cal} cal${m.protein != null ? ` · ${m.protein}g protein` : ""}${m.fiber != null ? ` · ${m.fiber}g fiber` : ""}</div>` : ""}
+              <div class="tiny meal-why">${esc(m.why || (m.mine ? "Your recipe" : ""))}</div>
             </div>
             <span class="meal-chev">${chevron}</span>
           </button>`).join("") || '<p class="muted tiny center" style="padding:20px">No meals match.</p>'}
@@ -634,9 +681,10 @@
   };
 
   SCREENS.meal = function () {
-    const m = PLAN.meals.find((x) => x.name === viewMeal);
+    const m = mealByName(viewMeal);
     if (!m) return `<div class="hero"><h1>Meal</h1></div><button class="btn ghost" data-go="food">Back to Food</button>`;
-    const r = (window.MEALS || {})[m.name];
+    const r = m.mine ? { ingredients: m.ingredients || [], steps: m.steps || [], servings: m.servings, makeAhead: m.makeAhead } : (window.MEALS || {})[m.name];
+    const hasNut = m.cal != null;
     const nut = [
       ["cal", m.cal], ["protein", m.protein + "g"], ["carbs", m.carbs + "g"], ["fiber", m.fiber + "g"],
       ["fat", m.fat + "g"], ["sodium", m.sodium + "mg"], ["potassium", m.potassium], ["sat fat", m.satFat + "g"],
@@ -646,14 +694,15 @@
       <div class="hero" style="padding-top:2px">
         <span class="typebadge type-${(m.type || "").toLowerCase()}" style="margin-bottom:6px;display:inline-block">${esc(m.type)}</span>
         <h1>${esc(m.name)}</h1>
-        <div class="muted" style="max-width:340px;margin:6px auto 0">${esc(m.why || "")}</div>
+        <div class="muted" style="max-width:340px;margin:6px auto 0">${esc(m.why || (m.mine ? "Your recipe" : ""))}</div>
+        ${m.mine ? `<div style="margin-top:8px"><button class="btn small ghost" data-recipe-edit="${esc(m.name)}">Edit</button> <button class="btn small ghost" data-recipe-del="${esc(m.name)}">Delete</button></div>` : ""}
       </div>
-      <div class="card">
+      ${hasNut ? `<div class="card">
         <h2>Nutrition</h2>
         <div class="macros">${nut.slice(0, 4).map(([k, v]) => `<div class="macro"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("")}</div>
         <div class="macros" style="margin-top:8px">${nut.slice(4).map(([k, v]) => `<div class="macro"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("")}</div>
-      </div>
-      ${r ? `
+      </div>` : ""}
+      ${r && (r.ingredients.length || r.steps.length) ? `
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
             <h2>Ingredients</h2>
@@ -704,7 +753,9 @@
     return PLAN.meta.startWeightLb;
   }
   function workoutsContent() {
-    const iso = planToday();
+    const iso = woDate || planToday();
+    const isToday = iso === planToday();
+    const atStart = iso === START, atEnd = iso === RACE;
     const todays = (S.workouts && S.workouts[iso]) || [];
     const todayKcal = todays.reduce((a, w) => a + (w.kcal || 0), 0);
     const stravaOn = !!(S.strava && S.strava.connected);
@@ -717,9 +768,11 @@
       </div>
 
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <h2>Record a workout</h2>
-          <span class="tiny muted">${esc(fmtDate(iso))}</span>
+        <h2 style="margin-bottom:8px">Record a workout</h2>
+        <div class="date-nav">
+          <button class="date-arrow" data-woday="-1" ${atStart ? "disabled" : ""} aria-label="Previous day">${backArrow}</button>
+          <div class="date-cur"><b>${isToday ? "Today" : esc(fmtDate(iso))}</b>${isToday ? "" : `<button class="date-today" data-wotoday="1">Jump to today</button>`}</div>
+          <button class="date-arrow" data-woday="1" ${atEnd ? "disabled" : ""} aria-label="Next day">${chevron}</button>
         </div>
         <p class="tiny muted" style="margin:2px 0 8px">Log walks, strength, yoga and cross-training here. Runs come from Strava.</p>
         <div class="wo-types">${WORKOUTS.map((w, i) => `<button class="wo-type ${i === 0 ? "sel" : ""}" data-wotype="${w.type}" data-met="${w.met}">${w.ico} ${w.type}</button>`).join("")}</div>
@@ -729,7 +782,7 @@
       </div>
 
       ${todays.length ? `<div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:baseline"><h2>Today's workouts</h2><span class="tiny muted">${todayKcal} kcal</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><h2>${isToday ? "Today's workouts" : "Logged that day"}</h2><span class="tiny muted">${todayKcal} kcal</span></div>
         ${todays.map((w, i) => `<div class="meal-row"><span class="when">${esc(w.type)}</span><span class="what">${w.minutes} min · ~${w.kcal} kcal <button class="wo-del" data-wodel="${i}" aria-label="remove">✕</button></span></div>`).join("")}
       </div>` : ""}
 
@@ -824,21 +877,37 @@
     $("#log-scrim").onclick = (e) => { if (e.target.id === "log-scrim") $("#modal-root").innerHTML = ""; };
     $("#lg-save").onclick = () => {
       const num = (id) => { const v = $("#" + id).value.trim(); return v === "" ? undefined : +v; };
+      const prevW = lastWeightBefore(iso);
       ds.log = Object.assign({}, ds.log, {
         weight: num("lg-weight"), bodyfat: num("lg-bf"),
         sleep: num("lg-sleep"), actualCal: num("lg-cal"), mood, notes: $("#lg-notes").value.trim() || undefined,
       });
+      const newW = ds.log.weight;
+      // every time weight changes from a previous reading, a bunny hops in
+      if (newW != null && prevW != null && Math.abs(newW - prevW) >= 0.1 && !ds.flags.weightBunny) {
+        ds.flags.weightBunny = true;
+        grant(pickBunny(Math.random() < 0.2 ? "uncommon" : "common", true), iso);
+      }
       const hasAny = ["weight", "bodyfat", "sleep", "actualCal", "mood", "notes"].some((k) => ds.log[k] !== undefined);
       $("#modal-root").innerHTML = "";
-      if (hasAny && !ds.checks.log) { const it = { key: "log" }; toggleCheck(iso, it); }
-      else { touch(); render(); }
+      if (hasAny && !ds.checks.log) { toggleCheck(iso, { key: "log" }); }
+      else { touch(); render(); flushAwards(); }
       toast("Check-in saved 🌸");
     };
+  }
+  // most recent weight logged on a day before `iso`
+  function lastWeightBefore(iso) {
+    let i = (dayIndex[iso] ?? PLAN.days.length) - 1;
+    for (; i >= 0; i--) {
+      const l = S.days[PLAN.days[i].date] && S.days[PLAN.days[i].date].log;
+      if (l && l.weight != null) return +l.weight;
+    }
+    return null;
   }
 
   // ---------- workouts ----------
   function addWorkout(type, met, minutes) {
-    const iso = planToday();
+    const iso = woDate || planToday();
     S.workouts[iso] = S.workouts[iso] || [];
     S.workouts[iso].push({ type, minutes, kcal: estKcal(met, minutes) });
     S.clovers += 2; // logging a workout earns lettuce
@@ -911,9 +980,9 @@
           </div>
           <div class="theme-row">${ROOM_THEMES.map((t) => `<button class="theme-chip theme-${t.id} ${theme === t.id ? "sel" : ""}" data-theme="${t.id}" title="${t.name}"></button>`).join("")}</div>
           <div class="room-info">
-            <h2>${esc(b.breed)}</h2>
+            <button class="room-name" data-rename="${id}">${esc(bunnyName(id))} <span class="pencil">✎</span></button>
             <div class="rar" style="background:${rar.color}33;color:${shade(rar.color)}">${rar.label}</div>
-            <span class="tiny muted">${b.nick ? esc(b.nick) + " · " : ""}visited ${have.count} time${have.count === 1 ? "" : "s"}</span>
+            <span class="tiny muted">${esc(b.breed)} · visited ${have.count} time${have.count === 1 ? "" : "s"}</span>
             ${S.mode === "hard" ? `<div class="hunger-line">${hungerBadge(id)} <button class="btn small" data-feed="${id}" ${S.clovers < FEED_COST ? "disabled style=opacity:.5" : ""}>Feed ${cloverIco}${FEED_COST}</button></div>` : ""}
           </div>
           <div class="room-tray">
@@ -934,7 +1003,11 @@
       touch(); rerender();
     });
     const fb = $("#modal-root").querySelector("[data-feed]");
-    if (fb) fb.onclick = () => { if (feed(id)) { toast("Fed " + b.breed + " 🥬"); rerender(); } };
+    if (fb) fb.onclick = () => {
+      if (feed(id)) { feedAnim($("#modal-root .room-bunny")); toast("Fed " + bunnyName(id) + " 🥬"); setTimeout(rerender, 650); }
+    };
+    const rn = $("#modal-root").querySelector("[data-rename]");
+    if (rn) rn.onclick = () => openRename(id, rerender);
     $("#modal-root").querySelectorAll("[data-theme]").forEach((el) => el.onclick = () => { have.room.theme = el.dataset.theme; touch(); rerender(); });
     const sh = $("#modal-root").querySelector("[data-shop]");
     if (sh) sh.onclick = () => openShop(id, "accessories");
@@ -959,6 +1032,83 @@
     if (st === "hungry") return '<span class="hbadge hungry">Hungry</span>';
     if (st === "wandered") return '<span class="hbadge gone">Wandered off</span>';
     return '<span class="hbadge ok">Content 🥬</span>';
+  }
+  function openRename(id, cb) {
+    const cur = bunnyName(id), b = B.byId[id];
+    $("#modal-root").innerHTML = `
+      <div class="modal-scrim" id="rn-scrim"><div class="award" style="max-width:300px">
+        <div class="art" style="width:90px;height:90px;margin:0 auto">${B.render(b, 90)}</div>
+        <h2 style="margin:8px 0 2px">Name your ${esc(b.breed)}</h2>
+        <input id="rn-input" class="name-input" value="${esc(cur)}" maxlength="16" />
+        <button class="btn" id="rn-save" style="margin-top:12px">Save</button>
+      </div></div>`;
+    const inp = $("#rn-input"); inp.focus(); inp.select();
+    const save = () => { const v = inp.value.trim(); if (v) { (S.collection[id].name = v); touch(); } $("#modal-root").innerHTML = ""; if (cb) cb(); };
+    $("#rn-save").onclick = save;
+    inp.onkeydown = (e) => { if (e.key === "Enter") save(); };
+    $("#rn-scrim").onclick = (e) => { if (e.target.id === "rn-scrim") { $("#modal-root").innerHTML = ""; if (cb) cb(); } };
+  }
+
+  // add or edit one of the user's own recipes
+  function openRecipeForm(editName) {
+    const existing = editName ? (S.userMeals || []).find((m) => m.name === editName) : null;
+    const types = ["Breakfast", "Lunch", "Dinner", "Snack", "Fuel"];
+    const curType = existing ? existing.type : "Breakfast";
+    const ingLines = existing ? (existing.ingredients || []).map((i) => (i.amount ? i.amount + " " : "") + i.item).join("\n") : "";
+    const stepLines = existing ? (existing.steps || []).join("\n") : "";
+    $("#modal-root").innerHTML = `
+      <div class="modal-scrim" id="rf-scrim"><div class="sheet">
+        <h2 style="margin:2px 0 10px">${existing ? "Edit recipe" : "Add your own recipe"}</h2>
+        <label class="fld"><span>Name</span>
+          <input id="rf-name" class="name-input" style="text-align:left" maxlength="48" placeholder="Peanut butter toast" value="${esc(existing ? existing.name : "")}" /></label>
+        <label class="fld"><span>Type</span>
+          <select id="rf-type" class="rf-select">${types.map((t) => `<option ${t === curType ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="fld"><span>Ingredients <em class="tiny muted">one per line</em></span>
+          <textarea id="rf-ing" class="rf-area" rows="5" placeholder="2 slices whole grain bread&#10;1 tbsp peanut butter&#10;1/2 banana, sliced">${esc(ingLines)}</textarea></label>
+        <label class="fld"><span>Steps <em class="tiny muted">one per line</em></span>
+          <textarea id="rf-steps" class="rf-area" rows="5" placeholder="Toast the bread&#10;Spread the peanut butter&#10;Top with banana">${esc(stepLines)}</textarea></label>
+        <label class="fld"><span>Why you like it <em class="tiny muted">optional</em></span>
+          <input id="rf-why" class="name-input" style="text-align:left" maxlength="90" placeholder="Quick pre-run fuel" value="${esc(existing ? (existing.why || "") : "")}" /></label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn ghost" id="rf-cancel" style="flex:1">Cancel</button>
+          <button class="btn" id="rf-save" style="flex:2">Save recipe</button>
+        </div>
+      </div></div>`;
+    const close = () => ($("#modal-root").innerHTML = "");
+    $("#rf-cancel").onclick = close;
+    $("#rf-scrim").onclick = (e) => { if (e.target.id === "rf-scrim") close(); };
+    $("#rf-save").onclick = () => {
+      const name = $("#rf-name").value.trim();
+      if (!name) { $("#rf-name").focus(); return; }
+      const ingredients = $("#rf-ing").value.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+        const mt = line.match(/^([\d/.\s]+(?:cups?|tbsp|tsp|oz|g|lb|ml|slices?|cloves?|cans?|scoops?|pieces?)?\.?)\s+(.+)$/i);
+        return mt ? { amount: mt[1].trim(), item: mt[2].trim() } : { amount: "", item: line };
+      });
+      const steps = $("#rf-steps").value.split("\n").map((l) => l.trim()).filter(Boolean);
+      const rec = { name, type: $("#rf-type").value, why: $("#rf-why").value.trim(), ingredients, steps, mine: true };
+      S.userMeals = S.userMeals || [];
+      if (existing) {
+        const i = S.userMeals.findIndex((m) => m.name === editName);
+        if (i >= 0) S.userMeals[i] = rec;
+      } else if (S.userMeals.some((m) => m.name === name) || PLAN.meals.some((m) => m.name === name)) {
+        rec.name = name + " (yours)";
+        S.userMeals.push(rec);
+      } else {
+        S.userMeals.push(rec);
+      }
+      touch(); close(); toast(existing ? "Recipe updated" : "Recipe added"); viewMeal = rec.name; go("meal");
+    };
+    $("#rf-name").focus();
+  }
+  // a little "yum" burst over a bunny when fed
+  function feedAnim(el) {
+    if (!el) return;
+    el.classList.remove("wiggle"); void el.offsetWidth; el.classList.add("wiggle");
+    const burst = document.createElement("div");
+    burst.className = "feed-burst";
+    burst.innerHTML = "🥬💚🥬💚🥬".split("").map((c, i) => `<span style="left:${20 + i * 15}%;animation-delay:${i * 0.05}s">${c}</span>`).join("");
+    el.appendChild(burst);
+    setTimeout(() => burst.remove(), 1000);
   }
 
   // ---------- shop: toys + accessories, bought with lettuce ----------
@@ -1057,6 +1207,14 @@
     view.querySelectorAll("[data-go]").forEach((el) => el.onclick = () => go(el.dataset.go));
     // meal card -> detail page
     view.querySelectorAll("[data-meal]").forEach((el) => el.onclick = () => go("meal", { meal: el.dataset.meal }));
+    // recipes: add / edit / delete your own
+    view.querySelectorAll("[data-recipe-new]").forEach((el) => el.onclick = () => openRecipeForm(null));
+    view.querySelectorAll("[data-recipe-edit]").forEach((el) => el.onclick = () => openRecipeForm(el.dataset.recipeEdit));
+    view.querySelectorAll("[data-recipe-del]").forEach((el) => el.onclick = () => {
+      const name = el.dataset.recipeDel;
+      S.userMeals = (S.userMeals || []).filter((x) => x.name !== name);
+      touch(); toast("Recipe deleted"); go("food");
+    });
     // calendar day -> jump to that day on Today
     view.querySelectorAll("[data-jump]").forEach((el) => el.onclick = () => { viewISO = el.dataset.jump; go("today"); });
     // meals search + filter
@@ -1092,8 +1250,13 @@
       addWorkout(woType, woMet, m);
     };
     view.querySelectorAll("[data-wodel]").forEach((el) => el.onclick = () => {
-      const iso = planToday(); (S.workouts[iso] || []).splice(+el.dataset.wodel, 1); touch(); render();
+      const iso = woDate || planToday(); (S.workouts[iso] || []).splice(+el.dataset.wodel, 1); touch(); render();
     });
+    // date stepper on the Workouts recorder
+    view.querySelectorAll("[data-woday]").forEach((el) => el.onclick = () => {
+      woDate = shiftISO(woDate || planToday(), +el.dataset.woday); render();
+    });
+    view.querySelectorAll("[data-wotoday]").forEach((el) => el.onclick = () => { woDate = null; render(); });
   }
 
   // ---------- auth / boot ----------
@@ -1104,6 +1267,28 @@
     $("#brand-bunny").innerHTML = B.render(B.byId["biscuit"], 30);
     recomputeStreak();
     render();
+    if (!S.starterDone && Object.keys(S.collection).length === 0) setTimeout(openStarter, 350);
+  }
+  // First-run: a big celebratory moment - open your first 3 bunnies
+  function openStarter() {
+    const pool = B.CATALOG.filter((b) => b.rarity === "common" || b.rarity === "uncommon");
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const picks = pool.slice(0, 3);
+    $("#modal-root").innerHTML = `
+      <div class="modal-scrim" id="st-scrim"><div class="award">
+        <div class="spark">✧ ✦ ✧</div>
+        <h2 style="margin-top:4px">Welcome to Bunny Meadow!</h2>
+        <p class="msg">Your cozy meadow is ready. Open your first three bunnies to begin - then earn more by logging your days. 🌿</p>
+        <div class="starter-gifts">🎁 🎁 🎁</div>
+        <button class="btn" id="st-open">Open my bunnies!</button>
+      </div></div>`;
+    $("#st-open").onclick = () => {
+      S.starterDone = true;
+      picks.forEach((b) => grant(b, planToday()));
+      touch();
+      confetti(120);
+      flushAwards();
+    };
   }
   function lock() {
     localStorage.removeItem(LS_PW); PW = null;
