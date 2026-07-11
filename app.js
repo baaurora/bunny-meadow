@@ -243,6 +243,17 @@
     while (i >= 0 && S.days[PLAN.days[i].date] && S.days[PLAN.days[i].date].flags.full) { n++; i--; }
     return n;
   }
+  // did she work out that day? (moved-my-body check, or a recorded workout)
+  function didWorkout(iso) {
+    const ds = S.days[iso];
+    return !!(ds && ds.checks && ds.checks.movement) || !!(S.workouts[iso] && S.workouts[iso].length);
+  }
+  // consecutive workout days ending on iso
+  function trailingWorkoutStreak(iso) {
+    let i = dayIndex[iso], n = 0;
+    while (i >= 0 && didWorkout(PLAN.days[i].date)) { n++; i--; }
+    return n;
+  }
   function recomputeStreak() {
     let best = 0, cur = 0;
     for (const d of PLAN.days) {
@@ -285,6 +296,15 @@
         // weekly streaks build toward the rarest bunnies
         grant(pickBunny(st % 28 === 0 ? "legendary" : "epic", true), iso);
       }
+    }
+
+    // every run of 3 workout days in a row earns a bunny (rarer as the streak grows)
+    const wStreak = trailingWorkoutStreak(iso);
+    if (didWorkout(iso) && wStreak > 0 && wStreak % 3 === 0 && !ds.flags["wstreak" + wStreak]) {
+      ds.flags["wstreak" + wStreak] = true;
+      S.clovers += 6;
+      grant(pickBunny(wStreak >= 9 ? "rare" : "uncommon", true), iso);
+      toast(wStreak + " workouts in a row! 🥕");
     }
   }
 
