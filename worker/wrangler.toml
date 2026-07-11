@@ -6,12 +6,12 @@ compatibility_date = "2024-11-01"
 [vars]
 APP_ORIGIN = "https://baaurora.github.io"
 
-# Token storage. Create it once with:
-#   wrangler kv namespace create STRAVA_TOKENS
-# then paste the printed id below.
+# Token storage. Already created for you in Bianca.r.pagano@gmail.com's Cloudflare
+# account (id 5746193bee50d095617df9749ced8a06). If you deploy under a DIFFERENT
+# account, run `wrangler kv namespace create STRAVA_TOKENS` and swap the id below.
 [[kv_namespaces]]
 binding = "STRAVA_TOKENS"
-id = "PASTE_KV_NAMESPACE_ID_HERE"
+id = "7ead7f7df8c848048ff8fc085a3613b4"
 
 # Secrets are NOT stored here. Set them once with:
 #   wrangler secret put STRAVA_CLIENT_ID

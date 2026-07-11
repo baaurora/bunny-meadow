@@ -20,11 +20,13 @@ You deploy this once. After that, connecting is a single tap for her, no code.
 3. Copy the **Client ID** and **Client Secret**. Keep the secret private.
 
 ## Step 2 - Create the token store (KV)
-From this `worker/` folder:
+Already done. A KV namespace `STRAVA_TOKENS` was created in
+Bianca.r.pagano@gmail.com's Cloudflare account and its id is already filled into
+`wrangler.toml`. Only redo this if you deploy under a different account:
 ```
 wrangler kv namespace create STRAVA_TOKENS
 ```
-Copy the printed `id` into `wrangler.toml` where it says `PASTE_KV_NAMESPACE_ID_HERE`.
+and swap the printed `id` into `wrangler.toml`.
 
 ## Step 3 - Add the secrets and deploy
 ```
