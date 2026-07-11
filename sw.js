@@ -1,7 +1,11 @@
 /* Bunny Meadow service worker.
    Precache the app shell so it opens instantly and works offline once installed.
    Bump CACHE when files change so the new version replaces the old on next launch. */
-const CACHE = "bunny-meadow-v1";
+const CACHE = "bunny-meadow-v3";
+// breed -> pose count
+const BREEDS = { marshmallow: 3, domino: 3, biscuit: 3, pip: 3, acorn: 3, marmalade: 3, frost: 2, leo: 2, cloud: 3, patch: 3, sunny: 1 };
+const IMGS = ["./bunnies/sleeping.png"];
+for (const b in BREEDS) for (let i = 0; i < BREEDS[b]; i++) IMGS.push(`./bunnies/${b}-${i}.png`);
 const SHELL = [
   "./",
   "./index.html",
@@ -12,7 +16,7 @@ const SHELL = [
   "./meals.js",
   "./config.js",
   "./manifest.webmanifest",
-];
+].concat(IMGS);
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

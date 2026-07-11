@@ -434,6 +434,12 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
 .shop-buy.off { background: var(--line); color: var(--ink-faint); }
 .shop-owned { font-size: 0.7rem; font-weight: 700; color: var(--good); }
 
+/* ---------- image bunnies ---------- */
+.bwrap { position: relative; display: inline-block; }
+.bimg { width: 100%; height: 100%; object-fit: contain; display: block; -webkit-user-drag: none; user-select: none; }
+.bacc { position: absolute; top: -4%; left: 50%; transform: translateX(-50%); width: 52%; height: 52%; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(80,60,40,0.2)); }
+.bacc svg { width: 100%; height: 100%; overflow: visible; }
+
 /* ---------- activity note ---------- */
 .activity-note { width: 100%; padding: 12px 14px; border-radius: var(--radius-sm); border: 1.5px solid var(--line); background: #fff; font-family: inherit; font-size: 1rem; color: var(--ink); resize: vertical; }
 .activity-note:focus { outline: 2px solid var(--lavender-deep); border-color: transparent; }

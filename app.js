@@ -55,6 +55,7 @@
   const NAV_FOR = { today: "today", plan: "plan", meals: "plan", meal: "plan", meadow: "meadow", dex: "dex", trends: "trends" };
 
   function go(r, opts) {
+    if (r === "meadow" && route !== "meadow") meadowSeed = (meadowSeed + 1) % 997;
     route = r;
     if (opts && opts.meal) viewMeal = opts.meal;
     renderNav();
@@ -355,6 +356,15 @@
   }
 
   // Deterministic scatter positions so bunnies sit "on the grass" without overlapping too much.
+  // Vary each meadow bunny's pose (sitting / laying / asleep) - stable per render,
+  // different across bunnies, and it reshuffles a bit each time the meadow opens.
+  let meadowSeed = 0;
+  function meadowPose(id, i) {
+    const b = B.byId[id]; const n = (b && b.poses) || 1;
+    let h = meadowSeed + i * 7;
+    for (let k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) >>> 0;
+    return h % n;
+  }
   function meadowSpots(n) {
     const spots = [];
     const cols = 3;
@@ -388,7 +398,7 @@
           ${bunnies.length ? bunnies.map((b, i) => `
             <div class="hopper" data-bunny="${b.id}" style="left:${spots[i].left}%;bottom:${spots[i].bottom}%;animation-delay:${spots[i].delay}s;z-index:${100 - Math.round(spots[i].bottom)}">
               <div class="bunny-shadow"></div>
-              <div class="hop">${B.render(b, 76, { accessory: equipped(b.id) })}</div>
+              <div class="hop">${B.render(b, 76, { accessory: equipped(b.id), pose: meadowPose(b.id, i) })}</div>
             </div>`).join("")
             : `<div class="meadow-empty">Your meadow is quiet.<br/>Check off your day and bunnies will hop in.</div>`}
           <span class="tuft t1"></span><span class="tuft t2"></span><span class="tuft t3"></span><span class="tuft t4"></span>
@@ -713,7 +723,7 @@
           <div class="room-info">
             <h2>${esc(b.breed)}</h2>
             <div class="rar" style="background:${rar.color}33;color:${shade(rar.color)}">${rar.label}</div>
-            <span class="tiny muted">Visited ${have.count} time${have.count === 1 ? "" : "s"}</span>
+            ${b.kind ? `<span class="tiny muted"> ${esc(b.kind)} · </span>` : ""}<span class="tiny muted">visited ${have.count} time${have.count === 1 ? "" : "s"}</span>
           </div>
           <div class="room-tray">
             <div class="tray-head"><b>Dress up ${esc(b.breed)}</b><button class="btn small ghost" data-shop="1">${cloverIco} ${S.clovers} · Shop</button></div>
@@ -774,7 +784,7 @@
     });
   }
   // preview chip: a neutral bunny wearing the accessory
-  const PREVIEW_BUNNY = B.byId["holland-lop"];
+  const PREVIEW_BUNNY = B.byId["biscuit"];
   function accPreview(accId) {
     return B.render(PREVIEW_BUNNY, 48, { accessory: accId });
   }
@@ -832,7 +842,7 @@
     $("#lock").classList.add("hide");
     $("#app").classList.remove("hide");
     $("#nav").classList.remove("hide");
-    $("#brand-bunny").innerHTML = B.render(B.byId["holland-lop"], 30);
+    $("#brand-bunny").innerHTML = B.render(B.byId["biscuit"], 30);
     recomputeStreak();
     render();
   }
