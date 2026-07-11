@@ -2,7 +2,8 @@
    Plain vanilla JS, no build step. Depends on config.js, data.js, bunnies.js. */
 (function () {
   "use strict";
-  const PLAN = window.PLAN;
+  const BASE_PLAN = window.PLAN;   // the built-in Bunny Meadow marathon plan
+  let PLAN = BASE_PLAN;            // active plan (may be swapped for a user-uploaded one)
   const B = window.BUNNIES;
   const CFG = window.CONFIG;
 
@@ -16,10 +17,33 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-  const dayIndex = Object.fromEntries(PLAN.days.map((d, i) => [d.date, i]));
+  let dayIndex = Object.fromEntries(PLAN.days.map((d, i) => [d.date, i]));
   const dayByISO = (iso) => PLAN.days[dayIndex[iso]];
-  const START = PLAN.days[0].date;
-  const RACE = PLAN.days[PLAN.days.length - 1].date;
+  let START = PLAN.days[0].date;
+  let RACE = PLAN.days[PLAN.days.length - 1].date;
+
+  // Swap in a user-uploaded plan (S.customPlan) or fall back to the built-in one.
+  // Keeps the built-in meal library, fueling, grocery and sources as generic references;
+  // only the day-by-day schedule + date window come from the custom plan.
+  function applyPlan() {
+    const custom = (typeof S !== "undefined" && S && S.customPlan && S.customPlan.days && S.customPlan.days.length)
+      ? S.customPlan : null;
+    if (custom) {
+      const weeksMap = {};
+      custom.days.forEach((d) => { if (!weeksMap[d.week]) weeksMap[d.week] = { week: d.week, phase: d.phase || "Custom" }; });
+      const rollup = Object.values(weeksMap).sort((a, b) => a.week - b.week);
+      PLAN = Object.assign({}, BASE_PLAN, {
+        meta: Object.assign({}, BASE_PLAN.meta, custom.meta || {}),
+        days: custom.days, rollup,
+      });
+    } else {
+      PLAN = BASE_PLAN;
+    }
+    dayIndex = Object.fromEntries(PLAN.days.map((d, i) => [d.date, i]));
+    START = PLAN.days[0].date;
+    RACE = PLAN.days[PLAN.days.length - 1].date;
+    if (typeof viewISO !== "undefined") viewISO = planToday();
+  }
 
   function localTodayISO() {
     const d = new Date();
@@ -87,6 +111,7 @@
       meadowPos: {},   // bunny id -> {left, bottom} percent of the meadow world (dragged)
       userMeals: [],   // recipes the user added
       starterDone: false,
+      customPlan: null, // a user-uploaded training plan ({meta, days}) that replaces the built-in schedule
     };
   }
   function migrate(s) {
@@ -98,6 +123,7 @@
       accessories: s.accessories || [], toys: s.toys || [],
       mode: s.mode || "easy", workouts: s.workouts || {}, strava: s.strava || null,
       meadowPos: s.meadowPos || {}, userMeals: s.userMeals || [], starterDone: !!s.starterDone,
+      customPlan: s.customPlan || null,
     });
   }
   function equipped(id) { return (S.collection[id] && S.collection[id].room && S.collection[id].room.accessory) || null; }
@@ -146,6 +172,7 @@
     try { const j = JSON.parse(localStorage.getItem(LS_STATE)); return j ? migrate(j) : freshState(); }
     catch (e) { return freshState(); }
   })();
+  applyPlan(); // activate a saved custom plan, if any, before the first render
 
   function dayState(iso) {
     if (!S.days[iso]) S.days[iso] = { checks: {}, granted: {}, flags: {}, log: {} };
@@ -194,7 +221,7 @@
       { key: "dinner", emoji: "🍽️", label: "Dinner", sub: "Ate a satisfying dinner" },
       { key: "snacks", emoji: "🍎", label: "Snacks", sub: "Snacks and treats" },
       { key: "water", emoji: "💧", label: "Hydration", sub: "Drank plenty of water" },
-      { key: "log", emoji: "📓", label: "Daily check-in", sub: "Weight, BP, sleep, mood", optional: true },
+      { key: "log", emoji: "📓", label: "Daily check-in", sub: "Weight, sleep, mood", optional: true },
     ];
   }
   function pickBunny(rarity, preferNew) {
@@ -340,7 +367,7 @@
     });
     // y ticks
     [yMin, (yMin + yMax) / 2, yMax].forEach((yv) => {
-      out += `<text x="4" y="${sy(yv) + 3}" font-size="8" fill="#b6acc0">${Math.round(yv)}</text>`;
+      out += `<text x="4" y="${sy(yv) + 3}" font-size="8" fill="#6b6178">${Math.round(yv)}</text>`;
     });
     (opts.series || []).forEach((s) => {
       if (!s.points.length) return;
@@ -519,14 +546,19 @@
     const world = $("#meadow-world"); if (!world) return;
     view.querySelectorAll(".hopper").forEach((el) => {
       const id = el.dataset.bunny;
-      let sx = null, sy = null, dragging = false, moved = false, pos = null;
+      let sx = null, sy = null, pid = null, dragging = false, moved = false, pos = null;
       el.style.touchAction = "none";
+      // silently forget any in-progress gesture without treating it as a tap
+      const reset = () => { el.classList.remove("dragging"); sx = null; pid = null; dragging = false; moved = false; pos = null; el.style.zIndex = ""; };
       el.onpointerdown = (e) => {
-        sx = e.clientX; sy = e.clientY; dragging = false; moved = false; pos = null;
+        if (e.button != null && e.button !== 0) return; // primary button / touch only
+        sx = e.clientX; sy = e.clientY; pid = e.pointerId; dragging = false; moved = false; pos = null;
         try { el.setPointerCapture(e.pointerId); } catch (_) {}
       };
       el.onpointermove = (e) => {
         if (sx == null) return;
+        // a mouse move with no button held means the press already ended (stuck-gesture guard): never drag on hover
+        if (e.pointerType === "mouse" && e.buttons === 0) { reset(); return; }
         const dx = e.clientX - sx, dy = e.clientY - sy;
         if (!dragging && Math.hypot(dx, dy) > 8) { dragging = true; el.classList.add("dragging"); }
         if (dragging) {
@@ -538,14 +570,18 @@
           pos = { left, bottom };
         }
       };
-      const end = () => {
+      const end = (e) => {
         if (sx == null) return;
+        if (e && pid != null) { try { el.releasePointerCapture(pid); } catch (_) {} }
         el.classList.remove("dragging");
-        if (moved && pos) { S.meadowPos[id] = pos; touch(); }
-        else if (!moved) { openRoom(id); }
-        sx = null; dragging = false;
+        const wasMoved = moved, savedPos = pos;
+        sx = null; pid = null; dragging = false; moved = false; pos = null;
+        if (wasMoved && savedPos) { el.style.zIndex = ""; S.meadowPos[id] = savedPos; touch(); }
+        else if (!wasMoved) { openRoom(id); }
       };
       el.onpointerup = end; el.onpointercancel = end;
+      // safety net: if focus/visibility is lost mid-gesture, drop it
+      el.onlostpointercapture = () => { if (!moved) reset(); };
     });
   }
 
@@ -930,32 +966,213 @@
     $("#sv-scrim").onclick = (e) => { if (e.target.id === "sv-scrim") $("#modal-root").innerHTML = ""; };
   }
 
-  // ---------- settings (game mode) ----------
+  // ---------- plan intake: read an uploaded .xlsx/.xls/.csv into {meta, days} ----------
+  // SheetJS is ~950KB, so we only fetch it the moment someone imports an Excel file.
+  function loadXLSX() {
+    return new Promise((resolve, reject) => {
+      if (window.XLSX) return resolve(window.XLSX);
+      const s = document.createElement("script");
+      s.src = "xlsx.full.min.js";
+      s.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error("The spreadsheet reader did not load.")));
+      s.onerror = () => reject(new Error("Could not load the spreadsheet reader. Check your connection and try again."));
+      document.head.appendChild(s);
+    });
+  }
+  // Normalize a Date / Excel serial / string into yyyy-mm-dd (or null if it is not a date).
+  function toISO(v) {
+    if (v == null) return null;
+    if (v instanceof Date && !isNaN(v)) {
+      return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+    }
+    // Excel stores dates as day-serials. Convert with SheetJS's own parser - it is timezone-free (no off-by-one).
+    if (typeof v === "number") {
+      if (v > 20000 && v < 80000 && window.XLSX && window.XLSX.SSF && window.XLSX.SSF.parse_date_code) {
+        const p = window.XLSX.SSF.parse_date_code(v);
+        if (p && p.y) return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+      }
+      return null;
+    }
+    const s = String(v).trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})$/);
+    if (m) {
+      let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000;
+      let mo = a, da = b; if (a > 12 && b <= 12) { mo = b; da = a; } // dd/mm fallback
+      if (mo < 1 || mo > 12 || da < 1 || da > 31) return null;
+      return `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`;
+    }
+    const d = new Date(s);
+    if (!isNaN(d) && d.getFullYear() > 2000 && d.getFullYear() < 2100) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    return null;
+  }
+  // Forgiving CSV parser (handles quoted fields and embedded commas/newlines).
+  function parseCSV(text) {
+    const rows = []; let row = [], cur = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (c !== "\r") cur += c;
+    }
+    if (cur.length || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  const weekdayOf = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "long" }); };
+  // Turn a grid of rows (first row = headers) into a {meta, days} plan.
+  function buildPlanFromRows(rows, sourceName) {
+    rows = (rows || []).filter((r) => r && r.some((c) => String(c).trim() !== ""));
+    if (rows.length < 2) throw new Error("That file looks empty. It needs a header row and one row per day.");
+    const header = rows[0].map((h) => String(h).trim().toLowerCase());
+    const find = (...keys) => header.findIndex((h) => keys.some((k) => h.includes(k)));
+    const ci = {
+      date: find("date", "day of", "when"),
+      week: find("week", "wk"),
+      training: find("workout", "training", "activity", "session", "exercise", "run", "plan", "type"),
+      miles: find("mile", "distance", "dist"),
+      km: find("km", "kilomet"),
+      notes: find("note", "description", "detail", "desc", "comment", "focus"),
+      phase: find("phase", "block", "cycle"),
+    };
+    if (ci.date < 0) { // no "date" header: sniff for the column that mostly parses as dates
+      let best = -1, bestN = 0;
+      for (let c = 0; c < header.length; c++) { let n = 0; for (let r = 1; r < rows.length; r++) if (toISO(rows[r][c])) n++; if (n > bestN) { bestN = n; best = c; } }
+      if (bestN >= Math.max(2, (rows.length - 1) * 0.5)) ci.date = best;
+    }
+    if (ci.date < 0) throw new Error("Could not find a date column. Add a column headed \"Date\" with one date per row.");
+    const num = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/[^0-9.]/g, "")); return isNaN(n) ? 0 : n; };
+    let days = [];
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r];
+      const iso = toISO(cells[ci.date]); if (!iso) continue;
+      const miles = ci.miles >= 0 ? num(cells[ci.miles]) : (ci.km >= 0 ? num(cells[ci.km]) * 0.621371 : 0);
+      days.push({
+        date: iso,
+        weekRaw: ci.week >= 0 ? parseInt(cells[ci.week], 10) : null,
+        phase: ci.phase >= 0 ? String(cells[ci.phase] || "").trim() : "",
+        training: ci.training >= 0 ? String(cells[ci.training] || "").trim() : "",
+        miles: Math.round(miles * 10) / 10,
+        notes: ci.notes >= 0 ? String(cells[ci.notes] || "").trim() : "",
+      });
+    }
+    if (!days.length) throw new Error("No dated rows found. Each day needs a date in the date column.");
+    days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const seen = new Set();
+    days = days.filter((d) => (seen.has(d.date) ? false : (seen.add(d.date), true)));
+    if (days.length > 500) days = days.slice(0, 500); // sanity cap
+    const startNum = isoToNum(days[0].date);
+    days.forEach((d) => {
+      d.week = (d.weekRaw && d.weekRaw > 0) ? d.weekRaw : Math.floor((isoToNum(d.date) - startNum) / 7) + 1;
+      d.weekday = weekdayOf(d.date);
+      if (!d.training) d.training = "Training";
+      delete d.weekRaw;
+    });
+    const meta = {
+      title: "Your plan", source: sourceName,
+      startDate: days[0].date, raceDate: days[days.length - 1].date,
+      totalDays: days.length, totalWeeks: days[days.length - 1].week,
+    };
+    return { meta, days };
+  }
+  async function parsePlanFile(file) {
+    const name = file.name || "plan";
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    let rows;
+    if (ext === "csv" || ext === "tsv" || ext === "txt") {
+      rows = parseCSV(await file.text());
+    } else if (ext === "xlsx" || ext === "xls" || ext === "xlsm" || ext === "ods") {
+      const XLSX = await loadXLSX();
+      // raw:true keeps date cells as day-serials so toISO() can convert them without timezone drift
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheetName = wb.SheetNames.find((n) => /plan|schedul|daily|calendar|training/i.test(n)) || wb.SheetNames[0];
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
+    } else {
+      throw new Error("Please upload a .xlsx, .xls, or .csv file. Word or PDF plans cannot be read automatically - export them to Excel or CSV first.");
+    }
+    return buildPlanFromRows(rows, name);
+  }
+  function planPreview(p) {
+    const sample = p.days.slice(0, 3).map((d) => `<li>${esc(fmtDate(d.date))} - ${esc(d.training)}${d.miles ? ` · ${d.miles} mi` : ""}</li>`).join("");
+    return `<div class="plan-preview"><b>Found ${p.days.length} days</b> <span class="tiny muted">(weeks 1-${p.meta.totalWeeks})</span>
+      <div class="tiny muted">${esc(fmtDate(p.meta.startDate))} → ${esc(fmtDate(p.meta.raceDate))}</div>
+      <ul class="tiny plan-sample">${sample}${p.days.length > 3 ? `<li class="muted">and ${p.days.length - 3} more...</li>` : ""}</ul></div>`;
+  }
+
+  // ---------- settings: game mode + rules + plan intake ----------
   function openSettings() {
     const hard = S.mode === "hard";
+    const custom = S.customPlan;
+    let pendingPlan = null;
     $("#modal-root").innerHTML = `
-      <div class="modal-scrim" id="set-scrim"><div class="award" style="text-align:left;max-width:340px">
+      <div class="modal-scrim" id="set-scrim"><div class="sheet set-sheet">
         <button class="room-close" id="set-close">${closeIco}</button>
-        <h2 style="text-align:center;margin-bottom:2px">Settings</h2>
-        <p class="tiny muted center" style="margin-bottom:12px">Choose how the game plays.</p>
-        <div class="mode-opt ${!hard ? "sel" : ""}" data-mode="easy">
-          <div class="mode-h">🌿 Easy <span class="tiny muted">relaxed</span></div>
-          <div class="tiny muted">Bunnies stay forever. No feeding needed. Lettuce is just for fun (toys and accessories).</div>
+        <h2 style="text-align:center;margin-bottom:12px">Settings</h2>
+
+        <div class="set-sec">
+          <div class="set-label">Game mode</div>
+          <div class="mode-opt ${!hard ? "sel" : ""}" data-mode="easy">
+            <div class="mode-h">🌿 Easy <span class="tiny muted">relaxed</span></div>
+            <div class="tiny muted">Bunnies stay forever. No feeding needed. Lettuce is just for fun (toys and accessories).</div>
+          </div>
+          <div class="mode-opt ${hard ? "sel" : ""}" data-mode="hard">
+            <div class="mode-h">🥕 Hard <span class="tiny muted">bunny keeper</span></div>
+            <div class="tiny muted">Feed every bunny at least once a week (costs lettuce, which you earn by logging). Neglected bunnies get hungry and wander off, then come back when you feed them.</div>
+          </div>
         </div>
-        <div class="mode-opt ${hard ? "sel" : ""}" data-mode="hard">
-          <div class="mode-h">🥕 Hard <span class="tiny muted">bunny keeper</span></div>
-          <div class="tiny muted">Feed every bunny at least once a week (costs lettuce, which you earn by logging). Neglected bunnies get hungry and wander off - but come back when you feed them.</div>
+
+        <div class="set-sec">
+          <div class="set-label">How to play</div>
+          <ul class="rules">
+            <li>Check off what you actually did each day on the <b>Today</b> tab. A bunny hops in for every check.</li>
+            <li>Log your weight in the daily check-in. A bunny also appears whenever your weight changes.</li>
+            <li>You earn <b>lettuce</b> by logging. Spend it to feed bunnies or buy toys and accessories in the meadow <b>Shop</b> (top right of the meadow).</li>
+            <li>Tap a bunny to open its room, rename it, and dress it up. Drag bunnies around the meadow to arrange them.</li>
+            <li>The <b>Plan</b> tab holds your training schedule, meal ideas, and fueling. The <b>Food</b> tab is your recipe library where you can add your own.</li>
+          </ul>
         </div>
-        <div class="mode-line"><span class="tiny muted">Game mode</span><b class="tiny">${hard ? "Hard" : "Easy"}</b></div>
-        <button class="btn ghost" id="set-done" style="margin-top:6px">Done</button>
+
+        <div class="set-sec">
+          <div class="set-label">Your training plan</div>
+          <div class="tiny muted" style="margin-bottom:8px">Currently using: <b>${custom ? esc((custom.meta && custom.meta.source) || "your uploaded plan") : "the Bunny Meadow marathon plan"}</b>${custom ? ` <span class="muted">(${custom.days.length} days)</span>` : ""}.</div>
+          <p class="tiny muted" style="margin-bottom:8px">Upload your own plan as <b>Excel</b> (.xlsx) or <b>CSV</b> with one row per day. Include a <b>Date</b> column, plus any of: Week, Workout, Miles, Notes.</p>
+          <label class="file-btn" for="plan-file">📄 Choose a plan file</label>
+          <input id="plan-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.ods" style="display:none" />
+          <div id="plan-status" style="margin-top:10px"></div>
+          ${custom ? `<button class="btn ghost small" id="plan-reset" style="margin-top:10px">Reset to Bunny Meadow plan</button>` : ""}
+        </div>
+
+        <button class="btn" id="set-done" style="margin-top:4px">Done</button>
       </div></div>`;
-    const rerender = () => openSettings();
-    $("#set-close").onclick = () => { $("#modal-root").innerHTML = ""; render(); };
-    $("#set-done").onclick = () => { $("#modal-root").innerHTML = ""; render(); };
-    $("#set-scrim").onclick = (e) => { if (e.target.id === "set-scrim") { $("#modal-root").innerHTML = ""; render(); } };
+    const close = () => { $("#modal-root").innerHTML = ""; render(); };
+    $("#set-close").onclick = close;
+    $("#set-done").onclick = close;
+    $("#set-scrim").onclick = (e) => { if (e.target.id === "set-scrim") close(); };
     $("#modal-root").querySelectorAll("[data-mode]").forEach((el) => el.onclick = () => {
-      S.mode = el.dataset.mode; touch(); rerender();
+      S.mode = el.dataset.mode; touch(); openSettings();
     });
+    const resetBtn = $("#plan-reset");
+    if (resetBtn) resetBtn.onclick = () => { S.customPlan = null; touch(); applyPlan(); openSettings(); toast("Back to the Bunny Meadow plan"); };
+    $("#plan-file").onchange = async (e) => {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      const status = $("#plan-status");
+      status.innerHTML = `<span class="tiny muted">Reading ${esc(file.name)}...</span>`;
+      try {
+        pendingPlan = await parsePlanFile(file);
+        status.innerHTML = planPreview(pendingPlan) + `<button class="btn" id="plan-apply" style="margin-top:8px">Use this plan</button>`;
+        $("#plan-apply").onclick = () => {
+          S.customPlan = { meta: pendingPlan.meta, days: pendingPlan.days };
+          touch(); applyPlan();
+          $("#modal-root").innerHTML = ""; toast("Plan imported 🌿"); planTab = "marathon"; go("plan");
+        };
+      } catch (err) {
+        status.innerHTML = `<span class="tiny plan-err">${esc(err.message || "Could not read that file.")}</span>`;
+      }
+    };
   }
 
   // ---------- bunny room (equip accessories) ----------
@@ -1300,7 +1517,7 @@
     const errEl = $("#lock-err");
     const res = await syncLoad(pw);
     if (res.auth) { if (fromStored) { localStorage.removeItem(LS_PW); } errEl.textContent = "Hmm, that password doesn't match. 🐇"; return; }
-    if (res.state && (res.state.updatedAt || 0) >= (S.updatedAt || 0)) { S = migrate(res.state); saveLocal(); }
+    if (res.state && (res.state.updatedAt || 0) >= (S.updatedAt || 0)) { S = migrate(res.state); applyPlan(); saveLocal(); }
     else if (res.ok && CFG.FUNCTION_URL) { scheduleSync(); } // local newer -> push after boot
     // local-only fallback
     if (!CFG.FUNCTION_URL && pw !== CFG.DEV_PASSWORD) { errEl.textContent = "Hmm, that password doesn't match. 🐇"; return; }
