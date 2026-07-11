@@ -433,3 +433,7 @@ body[data-route="meadow"] .app { padding-left: 0; padding-right: 0; padding-bott
 .shop-buy { display: inline-flex; align-items: center; gap: 4px; background: var(--lavender-deep); color: #fff; border-radius: 999px; padding: 4px 10px; font-size: 0.74rem; font-weight: 700; }
 .shop-buy.off { background: var(--line); color: var(--ink-faint); }
 .shop-owned { font-size: 0.7rem; font-weight: 700; color: var(--good); }
+
+/* ---------- activity note ---------- */
+.activity-note { width: 100%; padding: 12px 14px; border-radius: var(--radius-sm); border: 1.5px solid var(--line); background: #fff; font-family: inherit; font-size: 1rem; color: var(--ink); resize: vertical; }
+.activity-note:focus { outline: 2px solid var(--lavender-deep); border-color: transparent; }

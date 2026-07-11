@@ -52,7 +52,7 @@
   let toastTimer = null;
 
   // Which bottom-nav tab lights up for a given route (sub-pages map to a parent).
-  const NAV_FOR = { today: "today", meals: "meals", meal: "meals", plan: "today", meadow: "meadow", dex: "dex", trends: "trends" };
+  const NAV_FOR = { today: "today", plan: "plan", meals: "plan", meal: "plan", meadow: "meadow", dex: "dex", trends: "trends" };
 
   function go(r, opts) {
     route = r;
@@ -124,24 +124,17 @@
   }
 
   // ---------- gamification ----------
-  function itemsFor(day) {
-    const runDay = day.miles > 0 || RUN_TYPES.includes(day.training);
-    const items = [
-      { key: "movement", emoji: "🏃", label: "Movement", sub: day.training + (day.miles ? ` · ${day.miles} mi` : "") },
-      { key: "breakfast", emoji: "🍳", label: "Breakfast", sub: day.meals.breakfast },
-      { key: "lunch", emoji: "🥗", label: "Lunch", sub: day.meals.lunch },
-      { key: "dinner", emoji: "🍽️", label: "Dinner", sub: day.meals.dinner },
-      { key: "snacks", emoji: "🍎", label: "Snacks", sub: [day.meals.snack1, day.meals.snack2].filter(Boolean).join(" · ") },
+  // Self-logged daily habits (not a prescribed plan). She checks off what she did.
+  function itemsFor() {
+    return [
+      { key: "movement", emoji: "🏃", label: "Moved my body", sub: "Run, walk, strength, yoga - anything counts" },
+      { key: "breakfast", emoji: "🍳", label: "Breakfast", sub: "Ate a good breakfast" },
+      { key: "lunch", emoji: "🥗", label: "Lunch", sub: "Ate a nourishing lunch" },
+      { key: "dinner", emoji: "🍽️", label: "Dinner", sub: "Ate a satisfying dinner" },
+      { key: "snacks", emoji: "🍎", label: "Snacks", sub: "Snacks and treats" },
+      { key: "water", emoji: "💧", label: "Hydration", sub: "Drank plenty of water" },
+      { key: "log", emoji: "📓", label: "Daily check-in", sub: "Weight, BP, sleep, mood", optional: true },
     ];
-    if (runDay) items.push({ key: "fuel", emoji: "⛽", label: "Run fuel", sub: fuelSub(day) });
-    items.push({ key: "log", emoji: "📓", label: "Daily check-in", sub: "Weight, BP, sleep, mood", optional: true });
-    return items;
-  }
-  function fuelSub(day) {
-    const f = day.fuel || {};
-    if (day.training === "Long Run" || day.training === "Race")
-      return `Pre: ${f.pre} · During: ${f.during} · Post: ${f.post}`;
-    return `Pre: ${f.pre} · Post: ${f.post}`;
   }
   function pickBunny(rarity, preferNew) {
     const pool = B.byRarity(rarity);
@@ -177,7 +170,7 @@
     if (now && !ds.granted[item.key]) {
       ds.granted[item.key] = true;
       S.clovers += 2;
-      const tier = item.key === "log" ? "uncommon" : (item.key === "movement" && RUN_TYPES.includes(dayByISO(iso).training) ? (Math.random() < 0.4 ? "uncommon" : "common") : (Math.random() < 0.18 ? "uncommon" : "common"));
+      const tier = item.key === "log" ? "uncommon" : (Math.random() < 0.18 ? "uncommon" : "common");
       grant(pickBunny(tier, true), iso);
     }
     evaluateDay(iso);
@@ -188,10 +181,8 @@
   }
 
   function evaluateDay(iso) {
-    const day = dayByISO(iso); if (!day) return;
     const ds = dayState(iso);
-    const items = itemsFor(day);
-    const required = items.filter((i) => !i.optional);
+    const required = itemsFor().filter((i) => !i.optional);
     const allMeals = ["breakfast", "lunch", "dinner", "snacks"].every((k) => ds.checks[k]);
     const fullDay = required.every((i) => ds.checks[i.key]);
 
@@ -199,16 +190,12 @@
     if (fullDay && !ds.flags.full) {
       ds.flags.full = true; S.clovers += 15;
       grant(pickBunny("rare", true), iso);
-      if (day.training === "Long Run" && day.miles > (S.milestones.longestLongRun || 0)) {
-        S.milestones.longestLongRun = day.miles; grant(pickBunny("epic", true), iso);
-      }
-      if (day.training === "Race") { grant(pickBunny("legendary", true), iso); grant(pickBunny("epic", true), iso); }
       const st = trailingStreak(iso);
-      if (st > 0 && st % 7 === 0 && !ds.flags.streak) { ds.flags.streak = true; grant(pickBunny("epic", true), iso); }
-      // phase complete?
-      const phaseDays = PLAN.days.filter((d) => d.phase === day.phase);
-      const done = phaseDays.every((d) => S.days[d.date] && S.days[d.date].flags.full);
-      if (done && !S.milestones.phases[day.phase]) { S.milestones.phases[day.phase] = true; grant(pickBunny("epic", true), iso); }
+      if (st > 0 && st % 7 === 0 && !ds.flags.streak) {
+        ds.flags.streak = true;
+        // weekly streaks build toward the rarest bunnies
+        grant(pickBunny(st % 28 === 0 ? "legendary" : "epic", true), iso);
+      }
     }
   }
 
@@ -280,23 +267,25 @@
   const SCREENS = {};
 
   SCREENS.today = function () {
-    const day = dayByISO(viewISO);
     const ds = dayState(viewISO);
-    const items = itemsFor(day);
+    const items = itemsFor();
     const required = items.filter((i) => !i.optional);
     const doneReq = required.filter((i) => ds.checks[i.key]).length;
     const pct = Math.round((doneReq / required.length) * 100);
-    const phaseCls = "phase-" + day.phase.replace(/\s/g, "");
     const idx = dayIndex[viewISO];
+    const isToday = viewISO === planToday();
     const todaysBunnies = todaysAwardStrip(viewISO);
-    const t = day.targets;
+    const note = (ds.log && ds.log.movementNote) || "";
+
+    // steady daily nutrition aims from her lab work (not tied to a training day)
+    const aimMap = { "Protein target": "Protein", "Fiber target": "Fiber", "Sodium target": "Sodium", "Potassium target": "Potassium", "Saturated fat target": "Sat fat" };
+    const aims = (PLAN.targetsInfo || []).filter((t) => aimMap[t.label]).map((t) => ({ k: aimMap[t.label], v: t.value }));
 
     return `
       <div class="hero">
-        <div class="date">${esc(fmtDate(viewISO))} · <button class="weeklink" data-go="plan">Week ${day.week} of ${PLAN.meta.totalWeeks}</button></div>
-        <div class="phasepill ${phaseCls}">${esc(day.phase)}</div>
-        <div class="training">${trainingEmoji(day)} ${esc(day.training)}${day.miles ? ` · ${day.miles} mi` : ""}</div>
-        <div class="encourage">${esc(encourage(day, pct))}</div>
+        <div class="date">${isToday ? "Today · " : ""}${esc(fmtDate(viewISO))}</div>
+        <div class="training">How did today go?</div>
+        <div class="encourage">${esc(encourage(pct))}</div>
         <div class="daynav">
           <button ${idx === 0 ? "disabled style=opacity:.3" : ""} data-day="prev">‹</button>
           <button class="today-btn" data-day="today">Jump to today</button>
@@ -310,70 +299,41 @@
           <span class="muted tiny">${doneReq}/${required.length} done</span>
         </div>
         <div class="progressbar"><span style="width:${pct}%"></span></div>
-        <p class="tiny muted" style="margin:2px 0 12px">${esc(day.notes || "")}</p>
+        <p class="tiny muted" style="margin:2px 0 12px">Check off what you actually did. A bunny hops in for every one.</p>
         <div class="checklist">
           ${items.map((it) => `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
               <span class="box">${ds.checks[it.key] ? "✓" : ""}</span>
               <span class="emoji">${it.emoji}</span>
-              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub">${esc(it.sub || "")}</span></span>
+              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub">${esc((it.key === "movement" && note) ? note : it.sub || "")}</span></span>
             </button>`).join("")}
         </div>
+      </div>
+
+      <div class="card">
+        <h2>What did you do today?</h2>
+        <p class="tiny muted" style="margin:2px 0 8px">Jot your workout or anything worth remembering. Optional.</p>
+        <textarea id="activity-note" class="activity-note" rows="2" placeholder="e.g. 6 mile easy run, felt strong">${esc(note)}</textarea>
       </div>
 
       ${todaysBunnies}
 
       <div class="card">
-        <h2>Fuel targets</h2>
-        <p class="tiny muted" style="margin:2px 0 8px">From your plan. A gentle guide, not a rule. If energy, sleep, or mood dip, eat toward the higher end. 💛</p>
+        <h2>Daily nutrition aims</h2>
+        <p class="tiny muted" style="margin:2px 0 8px">Gentle guardrails from your lab work, not rules. These stay the same every day.</p>
         <div class="macros">
-          <div class="macro"><div class="v">${t.cal}</div><div class="k">cal</div></div>
-          <div class="macro"><div class="v">${t.protein}g</div><div class="k">protein</div></div>
-          <div class="macro"><div class="v">${t.carb}g</div><div class="k">carbs</div></div>
-          <div class="macro"><div class="v">${t.fiber}g</div><div class="k">fiber</div></div>
+          ${aims.map((a) => `<div class="macro"><div class="v" style="font-size:.82rem">${esc(a.v)}</div><div class="k">${esc(a.k)}</div></div>`).join("")}
         </div>
-        <div class="macros" style="margin-top:8px">
-          <div class="macro"><div class="v">${t.fat}g</div><div class="k">fat</div></div>
-          <div class="macro"><div class="v">≤${t.sodiumMax}</div><div class="k">sodium</div></div>
-          <div class="macro"><div class="v">${t.potassium}</div><div class="k">potassium</div></div>
-          <div class="macro"><div class="v">≤${t.satFatMax}g</div><div class="k">sat fat</div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Meals for today</h2>
-        <p class="tiny muted" style="margin:0 0 6px">Tap a meal to see its recipe.</p>
-        ${mealRowHTML("Breakfast", day.meals.breakfast)}
-        ${mealRowHTML("Lunch", day.meals.lunch)}
-        ${mealRowHTML("Dinner", day.meals.dinner)}
-        ${mealRowHTML("Snack", day.meals.snack1)}
-        ${mealRowHTML("Snack", day.meals.snack2)}
-        ${(day.miles > 0 || RUN_TYPES.includes(day.training)) ? `<div class="meal-row"><span class="when">Run fuel</span><span class="what">${esc(fuelSub(day))}</span></div>` : ""}
       </div>
 
       <button class="btn ghost" data-open-log="1" style="margin-bottom:8px">Log weight, BP and mood</button>
     `;
   };
 
-  const MEAL_NAMES = new Set(PLAN.meals.map((m) => m.name));
-  function mealRowHTML(when, name) {
-    if (!name) return "";
-    const clickable = MEAL_NAMES.has(name);
-    return `<div class="meal-row ${clickable ? "meal-row-link" : ""}" ${clickable ? `data-meal="${esc(name)}"` : ""}>
-      <span class="when">${esc(when)}</span>
-      <span class="what">${esc(name)}${clickable ? ` <span class="meal-chev inline">${chevron}</span>` : ""}</span>
-    </div>`;
-  }
-
-  function trainingEmoji(day) {
-    return { "Long Run": "🏃‍♀️", "Race": "🏅", "Workout": "⚡", "Easy Run": "🌤️", "Strength": "💪", "Rest": "🌙", "Recovery": "🧘" }[day.training] || "🏃";
-  }
-  function encourage(day, pct) {
-    if (pct === 100) return "Every box checked — what a lovely day. 🌸";
-    if (day.training === "Race") return "It's race day. Trust your training and your practiced fuel. You've got this. 🏅";
-    if (day.training === "Long Run") return "Long run day — fuel well, keep it easy, and enjoy the miles. 💛";
-    if (day.training === "Rest" || day.training === "Recovery") return "A gentle day. Rest is part of getting stronger. 🌙";
-    if (day.training === "Strength") return "Strength keeps you injury-free. Protein-forward today. 💪";
+  function encourage(pct) {
+    if (pct >= 100) return "Every box checked. What a lovely day. 🌸";
+    if (pct === 0) return "A fresh day. Log the first thing you did. 🐇";
+    if (pct >= 60) return "So close. A couple more and the day is complete. 🌿";
     return "One check at a time. Little bunnies are waiting. 🐇";
   }
   function todaysAwardStrip(iso) {
@@ -567,7 +527,8 @@
       (!q || m.name.toLowerCase().includes(q) || (m.why || "").toLowerCase().includes(q)));
 
     return `
-      <div class="hero"><h1>Meals</h1><div class="muted">Tap a meal for its recipe and ingredients.</div></div>
+      <button class="backbtn" data-go="plan">${backArrow} Plan</button>
+      <div class="hero" style="padding-top:2px"><h1>Meal ideas</h1><div class="muted">From the coaching plan. Tap a meal for its recipe and ingredients.</div></div>
       <input class="searchbar" id="meal-search" placeholder="Search meals..." value="${esc(SCREENS.meals._q || "")}" />
       <div class="filterrow">${types.map((t) => `<button class="mfilter ${t === mealFilter ? "on" : ""}" data-mf="${t}">${t}</button>`).join("")}</div>
       <div class="meal-list">
@@ -626,12 +587,17 @@
   SCREENS.plan = function () {
     const curWeek = (dayByISO(planToday()) || {}).week;
     return `
-      <button class="backbtn" data-go="today">${backArrow} Today</button>
-      <div class="hero" style="padding-top:2px"><h1>18-week plan</h1><div class="muted">${fmtDate(START)} to ${fmtDate(RACE)} · race day is week ${PLAN.meta.totalWeeks}</div></div>
+      <div class="hero"><h1>Marathon plan</h1><div class="muted">${fmtDate(START)} to ${fmtDate(RACE)} · optional coaching plan</div></div>
+
+      <div class="card tint-lav">
+        <p class="tiny" style="margin:0">This is the marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> tab.</p>
+      </div>
+
+      <button class="btn ghost" data-go="meals" style="margin-bottom:10px">Browse meal ideas and recipes</button>
 
       <div class="card">
         <h2>Training calendar</h2>
-        <p class="tiny muted" style="margin:2px 0 10px">Numbers are planned miles. A green outline means that day is fully checked off. Tap the week label to jump there.</p>
+        <p class="tiny muted" style="margin:2px 0 10px">Numbers are planned miles for each day. A green outline marks a day you completed in your log. Tap a day to open it.</p>
         <div class="phase-key">${["Base", "Build", "Peak", "Taper", "Race Week"].map((p) => `<span class="chip" style="background:${phaseColor(p)}">${p}</span>`).join("")}</div>
         ${PLAN.rollup.map((wk) => {
           const wdays = PLAN.days.filter((d) => d.week === wk.week);
@@ -715,11 +681,11 @@
     $("#log-scrim").onclick = (e) => { if (e.target.id === "log-scrim") $("#modal-root").innerHTML = ""; };
     $("#lg-save").onclick = () => {
       const num = (id) => { const v = $("#" + id).value.trim(); return v === "" ? undefined : +v; };
-      ds.log = {
+      ds.log = Object.assign({}, ds.log, {
         weight: num("lg-weight"), bodyfat: num("lg-bf"), bpSys: num("lg-sys"), bpDia: num("lg-dia"),
         sleep: num("lg-sleep"), actualCal: num("lg-cal"), mood, notes: $("#lg-notes").value.trim() || undefined,
-      };
-      const hasAny = Object.values(ds.log).some((v) => v !== undefined);
+      });
+      const hasAny = ["weight", "bodyfat", "bpSys", "bpDia", "sleep", "actualCal", "mood", "notes"].some((k) => ds.log[k] !== undefined);
       $("#modal-root").innerHTML = "";
       if (hasAny && !ds.checks.log) { const it = { key: "log" }; toggleCheck(iso, it); }
       else { touch(); render(); }
@@ -828,11 +794,13 @@
     // checklist
     view.querySelectorAll("[data-check]").forEach((el) => el.onclick = () => {
       const key = el.dataset.check;
-      const day = dayByISO(viewISO);
-      const item = itemsFor(day).find((i) => i.key === key);
       if (key === "log") { openLog(viewISO); return; }
+      const item = itemsFor().find((i) => i.key === key);
       toggleCheck(viewISO, item);
     });
+    // free-text activity note (saved without a re-render so focus stays)
+    const an = view.querySelector("#activity-note");
+    if (an) an.oninput = () => { const ds = dayState(viewISO); ds.log = ds.log || {}; ds.log.movementNote = an.value; touch(); };
     // day nav
     view.querySelectorAll("[data-day]").forEach((el) => el.onclick = () => {
       const dir = el.dataset.day, idx = dayIndex[viewISO];
