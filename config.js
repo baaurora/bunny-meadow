@@ -12,5 +12,5 @@ window.CONFIG = {
   // Google sign-in (optional cloud backup + sync across devices). Paste the Google
   // OAuth Client ID here to turn it on. The sync API is the same Worker as Strava.
   // When empty, the app is local-only (no account, data stays on the phone).
-  GOOGLE_CLIENT_ID: "",
+  GOOGLE_CLIENT_ID: "602863764935-eeh59ffjb3a640i9go0pcqvgv3h578q0.apps.googleusercontent.com",
 };
