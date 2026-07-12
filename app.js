@@ -346,15 +346,16 @@
     S.streak.current = trailingStreak(planToday());
   }
 
+  // lettuce earned each time she logs something for the day (bunnies are earned separately)
+  function lettuceReward() { return 3 + Math.floor(Math.random() * 3); } // 3-5
+
   function toggleCheck(iso, item) {
     const ds = dayState(iso);
     const now = !ds.checks[item.key];
     ds.checks[item.key] = now;
     if (now && !ds.granted[item.key]) {
       ds.granted[item.key] = true;
-      S.clovers += 2;
-      const tier = item.key === "log" ? "uncommon" : (Math.random() < 0.18 ? "uncommon" : "common");
-      grant(pickBunny(tier, true), iso);
+      S.clovers += lettuceReward(); // logging a thing earns 3-5 lettuce, not a bunny
     }
     evaluateDay(iso);
     recomputeStreak();
@@ -369,25 +370,18 @@
     const allMeals = ["breakfast", "lunch", "dinner", "snacks"].every((k) => ds.checks[k]);
     const fullDay = required.every((i) => ds.checks[i.key]);
 
-    if (allMeals && !ds.flags.meals) { ds.flags.meals = true; S.clovers += 5; grant(pickBunny("uncommon", true), iso); }
-    if (fullDay && !ds.flags.full) {
-      ds.flags.full = true; S.clovers += 15;
-      grant(pickBunny("rare", true), iso);
-      const st = trailingStreak(iso);
-      if (st > 0 && st % 7 === 0 && !ds.flags.streak) {
-        ds.flags.streak = true;
-        // weekly streaks build toward the rarest bunnies
-        grant(pickBunny(st % 28 === 0 ? "legendary" : "epic", true), iso);
-      }
-    }
+    // flags still track meals/full-day completion for the streak counter + calendar,
+    // but they no longer grant bunnies. Bunnies come only from the opening 3 and
+    // from every run of 3 workout days in a row (below).
+    if (allMeals && !ds.flags.meals) ds.flags.meals = true;
+    if (fullDay && !ds.flags.full) ds.flags.full = true;
 
     // every run of 3 workout days in a row earns a bunny (rarer as the streak grows)
     const wStreak = trailingWorkoutStreak(iso);
     if (didWorkout(iso) && wStreak > 0 && wStreak % 3 === 0 && !ds.flags["wstreak" + wStreak]) {
       ds.flags["wstreak" + wStreak] = true;
-      S.clovers += 6;
       grant(pickBunny(wStreak >= 9 ? "rare" : "uncommon", true), iso);
-      toast(wStreak + " workouts in a row! 🥕");
+      toast(wStreak + " workouts in a row! A bunny hopped in 🥕");
     }
   }
 
@@ -519,7 +513,7 @@
           <span class="muted tiny">${doneReq}/${required.length} done</span>
         </div>
         <div class="progressbar"><span style="width:${pct}%"></span></div>
-        <p class="tiny muted" style="margin:2px 0 12px">Check off what you actually did. A bunny hops in for every one.</p>
+        <p class="tiny muted" style="margin:2px 0 12px">Check off what you actually did. You earn lettuce for each one.</p>
         <div class="checklist">
           ${items.map((it) => `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
@@ -563,11 +557,11 @@
       <div class="card tint-lav">
         <div style="display:flex;justify-content:space-between;align-items:baseline">
           <h2>New friends today</h2>
-          <span class="muted tiny">${ids.length ? ids.length + " discovered" : "keep checking!"}</span>
+          <span class="muted tiny">${ids.length ? ids.length + " discovered" : ""}</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;min-height:60px;align-items:center">
           ${shown.length ? shown.map((id) => `<div class="strip-bunny" data-bunny="${id}" style="width:58px" title="${esc(bunnyName(id))}">${B.render(B.byId[id], 58, { accessory: equipped(id) })}</div>`).join("")
-            : '<span class="muted tiny">Check something off to meet a bunny</span>'}
+            : '<span class="muted tiny">Do 3 workouts in a row to meet a new bunny 🥕</span>'}
         </div>
       </div>`;
   }
@@ -925,7 +919,7 @@
         <div class="wo-types">${WORKOUTS.map((w, i) => `<button class="wo-type ${i === 0 ? "sel" : ""}" data-wotype="${w.type}" data-met="${w.met}">${w.ico} ${w.type}</button>`).join("")}</div>
         <div class="field" style="margin-top:8px"><label>Minutes</label><input id="wo-min" type="number" inputmode="numeric" placeholder="e.g. 45" /></div>
         <div class="wo-est tiny muted" id="wo-est">Estimated burn appears here.</div>
-        <button class="btn" id="wo-add" style="margin-top:8px">Add workout <span class="tiny" style="opacity:.85">(+2 ${cloverIco})</span></button>
+        <button class="btn" id="wo-add" style="margin-top:8px">Add workout <span class="tiny" style="opacity:.85">(+3-5 ${cloverIco})</span></button>
       </div>
 
       ${todays.length ? `<div class="card">
@@ -1024,17 +1018,10 @@
     $("#log-scrim").onclick = (e) => { if (e.target.id === "log-scrim") $("#modal-root").innerHTML = ""; };
     $("#lg-save").onclick = () => {
       const num = (id) => { const v = $("#" + id).value.trim(); return v === "" ? undefined : +v; };
-      const prevW = lastWeightBefore(iso);
       ds.log = Object.assign({}, ds.log, {
         weight: num("lg-weight"), bodyfat: num("lg-bf"),
         sleep: num("lg-sleep"), actualCal: num("lg-cal"), mood, notes: $("#lg-notes").value.trim() || undefined,
       });
-      const newW = ds.log.weight;
-      // every time weight changes from a previous reading, a bunny hops in
-      if (newW != null && prevW != null && Math.abs(newW - prevW) >= 0.1 && !ds.flags.weightBunny) {
-        ds.flags.weightBunny = true;
-        grant(pickBunny(Math.random() < 0.2 ? "uncommon" : "common", true), iso);
-      }
       const hasAny = ["weight", "bodyfat", "sleep", "actualCal", "mood", "notes"].some((k) => ds.log[k] !== undefined);
       $("#modal-root").innerHTML = "";
       if (hasAny && !ds.checks.log) { toggleCheck(iso, { key: "log" }); }
@@ -1057,11 +1044,13 @@
     const iso = woDate || planToday();
     S.workouts[iso] = S.workouts[iso] || [];
     S.workouts[iso].push({ type, minutes, kcal: estKcal(met, minutes) });
-    S.clovers += 2; // logging a workout earns lettuce
-    // a logged workout also satisfies the "moved my body" habit for today
+    // recording a workout satisfies "moved my body" and earns 3-5 lettuce once for the day
     const ds = dayState(iso);
-    if (!ds.checks.movement) { toggleCheck(iso, { key: "movement" }); }
-    else { touch(); render(); }
+    if (!ds.granted.movement) { ds.granted.movement = true; S.clovers += lettuceReward(); }
+    ds.checks.movement = true;
+    evaluateDay(iso);   // may award the 3-in-a-row workout bunny
+    recomputeStreak();
+    touch(); render(); flushAwards();
     toast("Workout logged");
   }
   const stravaBase = () => (CFG.STRAVA_WORKER_URL || "").replace(/\/+$/, "");
@@ -1328,9 +1317,9 @@
         <div class="set-sec">
           <div class="set-label">How to play</div>
           <ul class="rules">
-            <li>Check off what you actually did each day on the <b>Today</b> tab. A bunny hops in for every check.</li>
-            <li>Log your weight in the daily check-in. A bunny also appears whenever your weight changes.</li>
-            <li>You earn <b>lettuce</b> by logging. Spend it to feed bunnies or buy toys and accessories in the meadow <b>Shop</b> (top right of the meadow).</li>
+            <li>Check off what you actually did each day on the <b>Today</b> tab. Each thing you log earns you <b>3-5 lettuce</b>.</li>
+            <li>You start with <b>3 bunnies</b>. New ones hop in when you do <b>3 workout days in a row</b>.</li>
+            <li>Spend <b>lettuce</b> to feed bunnies or buy toys and accessories in the meadow <b>Shop</b> (top right of the meadow).</li>
             <li>Tap a bunny to open its room, rename it, and dress it up. Drag bunnies around the meadow to arrange them.</li>
             <li>The <b>Plan</b> tab holds your training schedule, meal ideas, and fueling. The <b>Food</b> tab is your recipe library where you can add your own.</li>
           </ul>
@@ -1713,7 +1702,7 @@
       <div class="modal-scrim" id="st-scrim"><div class="award">
         <div class="spark">✧ ✦ ✧</div>
         <h2 style="margin-top:4px">Welcome to Bunny Meadow!</h2>
-        <p class="msg">Your cozy meadow is ready. Open your first three bunnies to begin - then earn more by logging your days. 🌿</p>
+        <p class="msg">Your cozy meadow is ready. Open your first three bunnies to begin. Logging your days earns lettuce, and a workout streak brings new bunnies. 🌿</p>
         <div class="starter-gifts">🎁 🎁 🎁</div>
         <button class="btn" id="st-open">Open my bunnies!</button>
       </div></div>`;
