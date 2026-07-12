@@ -104,6 +104,7 @@
       userMeals: [],   // recipes the user added
       starterDone: false,
       customPlan: null, // a user-uploaded training plan ({meta, days}) that replaces the built-in schedule
+      planOnboarded: false, // has the user seen the first-run "upload your training plan" prompt
       googleUser: null, // {sub, email, name} when signed in for cloud sync
     };
   }
@@ -117,6 +118,8 @@
       mode: s.mode || "easy", workouts: s.workouts || {}, strava: s.strava || null,
       meadowPos: s.meadowPos || {}, userMeals: s.userMeals || [], starterDone: !!s.starterDone,
       customPlan: s.customPlan || null, googleUser: s.googleUser || null,
+      // established users (already past first-run) or anyone with a plan aren't re-prompted
+      planOnboarded: s.planOnboarded || !!s.starterDone || !!s.customPlan,
     });
   }
   function equipped(id) { return (S.collection[id] && S.collection[id].room && S.collection[id].room.accessory) || null; }
@@ -420,8 +423,14 @@
   }
 
   // ---------- award modal (with naming on unlock + confetti) ----------
+  let onAwardsDone = null; // optional one-shot callback, run once the award queue is cleared
   function flushAwards() {
-    if (!awardQueue.length) { $("#modal-root").innerHTML = ""; return; }
+    if (!awardQueue.length) {
+      $("#modal-root").innerHTML = "";
+      const cb = onAwardsDone; onAwardsDone = null;
+      if (cb) cb();
+      return;
+    }
     const { bunny, isNew } = awardQueue[0];
     const rar = B.RARITY[bunny.rarity];
     const more = awardQueue.length - 1;
@@ -1474,11 +1483,51 @@
       <ul class="tiny plan-sample">${sample}${p.days.length > 3 ? `<li class="muted">and ${p.days.length - 3} more...</li>` : ""}</ul></div>`;
   }
 
+  // Shared plan-upload wiring: a file <input> + a status <div>. Parses the file, shows a
+  // preview, and applies it on confirm. onApplied() runs after the plan is applied.
+  function wirePlanUpload(input, status, onApplied) {
+    let pending = null;
+    input.onchange = async (e) => {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      status.innerHTML = `<span class="tiny muted">Reading ${esc(file.name)}...</span>`;
+      try {
+        pending = await parsePlanFile(file);
+        status.innerHTML = planPreview(pending) + `<button class="btn" id="plan-apply" style="margin-top:8px">Use this plan</button>`;
+        status.querySelector("#plan-apply").onclick = () => {
+          S.customPlan = { meta: pending.meta, days: pending.days };
+          S.planOnboarded = true;
+          touch(); applyPlan();
+          onApplied && onApplied();
+        };
+      } catch (err) {
+        status.innerHTML = `<span class="tiny plan-err">${esc(err.message || "Could not read that file.")}</span>`;
+      }
+    };
+  }
+  // First-run prompt: invite the user to upload their own training plan, which fills the
+  // calendar + Marathon section. Skippable - the built-in sample plan stays if they pass.
+  // (Established users and anyone who already uploaded a plan never see this.)
+  function openPlanOnboard() {
+    $("#modal-root").innerHTML = `
+      <div class="modal-scrim" id="po-scrim"><div class="sheet">
+        <h2 style="text-align:center;margin:0 0 4px">📄 Add your training plan</h2>
+        <p class="tiny muted" style="text-align:center;margin:0 0 14px">Upload your plan and it fills your <b>calendar</b> and the <b>Marathon</b> section with your own schedule. You can always change it later in Settings.</p>
+        <p class="tiny muted" style="margin:0 0 8px">Use <b>Excel</b> (.xlsx) or <b>CSV</b>, one row per day, with a <b>Date</b> column plus any of Week, Workout, Miles, Notes.</p>
+        <label class="file-btn" for="po-file">📄 Choose a plan file</label>
+        <input id="po-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.ods" style="display:none" />
+        <div id="po-status" style="margin-top:10px"></div>
+        <button class="linkbtn" id="po-skip" style="display:block;margin:16px auto 0">Use the sample plan for now</button>
+      </div></div>`;
+    const skip = () => { S.planOnboarded = true; touch(); $("#modal-root").innerHTML = ""; render(); };
+    wirePlanUpload($("#po-file"), $("#po-status"), () => { $("#modal-root").innerHTML = ""; toast("Plan added 🌿"); planTab = "marathon"; go("plan"); });
+    $("#po-skip").onclick = skip;
+    $("#po-scrim").onclick = (e) => { if (e.target.id === "po-scrim") skip(); };
+  }
+
   // ---------- settings: game mode + rules + plan intake ----------
   function openSettings() {
     const hard = S.mode === "hard";
     const custom = S.customPlan;
-    let pendingPlan = null;
     $("#modal-root").innerHTML = `
       <div class="modal-scrim" id="set-scrim"><div class="sheet set-sheet">
         <button class="room-close" id="set-close">${closeIco}</button>
@@ -1540,22 +1589,7 @@
     // Account: render Google's sign-in button, or wire the sign-out
     const gBtn = $("#g-btn"); if (gBtn) renderGoogleButton(gBtn);
     const gOut = $("#g-signout"); if (gOut) gOut.onclick = () => { googleSignOut(); openSettings(); toast("Signed out"); };
-    $("#plan-file").onchange = async (e) => {
-      const file = e.target.files && e.target.files[0]; if (!file) return;
-      const status = $("#plan-status");
-      status.innerHTML = `<span class="tiny muted">Reading ${esc(file.name)}...</span>`;
-      try {
-        pendingPlan = await parsePlanFile(file);
-        status.innerHTML = planPreview(pendingPlan) + `<button class="btn" id="plan-apply" style="margin-top:8px">Use this plan</button>`;
-        $("#plan-apply").onclick = () => {
-          S.customPlan = { meta: pendingPlan.meta, days: pendingPlan.days };
-          touch(); applyPlan();
-          $("#modal-root").innerHTML = ""; toast("Plan imported 🌿"); planTab = "marathon"; go("plan");
-        };
-      } catch (err) {
-        status.innerHTML = `<span class="tiny plan-err">${esc(err.message || "Could not read that file.")}</span>`;
-      }
-    };
+    wirePlanUpload($("#plan-file"), $("#plan-status"), () => { $("#modal-root").innerHTML = ""; toast("Plan imported 🌿"); planTab = "marathon"; go("plan"); });
   }
 
   // ---------- bunny room (equip accessories) ----------
@@ -1839,6 +1873,8 @@
     render();
     if (S.googleUser && S.googleUser.sub) setTimeout(silentSync, 600); // pull any changes from another device
     if (!S.starterDone && Object.keys(S.collection).length === 0) setTimeout(openStarter, 350);
+    // returning user who never saw the plan prompt (and has no custom plan yet)
+    else if (!S.planOnboarded && !S.customPlan) setTimeout(openPlanOnboard, 350);
     // keep runs fresh: sync on open if linked (and we did not just do it on return)
     else if (!justLinked && S.strava && S.strava.connected) {
       const stale = !S.strava.lastSync || (Date.now() / 1000 - S.strava.lastSync) > 1800;
@@ -1863,6 +1899,8 @@
       picks.forEach((b) => grant(b, planToday()));
       touch();
       confetti(120);
+      // after they meet their bunnies, invite them to add their training plan
+      onAwardsDone = () => { if (!S.planOnboarded && !S.customPlan) openPlanOnboard(); else render(); };
       flushAwards();
     };
   }

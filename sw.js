@@ -1,7 +1,7 @@
 /* Bunny Meadow service worker.
    Precache the app shell so it opens instantly and works offline once installed.
    Bump CACHE when files change so the new version replaces the old on next launch. */
-const CACHE = "bunny-meadow-v19";
+const CACHE = "bunny-meadow-v20";
 // breed -> pose count
 const BREEDS = { marshmallow: 3, domino: 3, biscuit: 3, pip: 3, acorn: 3, marmalade: 3, frost: 2, leo: 3, cloud: 3, sunny: 2, honey: 3, patch: 3, sylvia: 3 };
 const IMGS = ["./bunnies/sleeping.png"];
