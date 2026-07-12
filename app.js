@@ -112,6 +112,7 @@
       userMeals: [],   // recipes the user added
       starterDone: false,
       customPlan: null, // a user-uploaded training plan ({meta, days}) that replaces the built-in schedule
+      googleUser: null, // {sub, email, name} when signed in for cloud sync
     };
   }
   function migrate(s) {
@@ -123,7 +124,7 @@
       accessories: s.accessories || [], toys: s.toys || [],
       mode: s.mode || "easy", workouts: s.workouts || {}, strava: s.strava || null,
       meadowPos: s.meadowPos || {}, userMeals: s.userMeals || [], starterDone: !!s.starterDone,
-      customPlan: s.customPlan || null,
+      customPlan: s.customPlan || null, googleUser: s.googleUser || null,
     });
   }
   function equipped(id) { return (S.collection[id] && S.collection[id].room && S.collection[id].room.accessory) || null; }
@@ -186,7 +187,7 @@
   // ---------- sync ----------
   let syncTimer = null, syncOk = null;
   function setSync(ok) { syncOk = ok; const el = $("#syncdot"); if (el) el.className = "sync-dot" + (ok ? " on" : ""); }
-  function scheduleSync() { if (!CFG.FUNCTION_URL || !PW) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncSave, 800); }
+  function scheduleSync() { scheduleGoogleSync(); if (!CFG.FUNCTION_URL || !PW) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncSave, 800); }
   async function syncSave() {
     if (!CFG.FUNCTION_URL || !PW) return;
     try {
@@ -209,6 +210,88 @@
       const j = await r.json();
       return { ok: true, state: j.state };
     } catch (e) { return { ok: false, net: true }; }
+  }
+
+  // ---------- Google sign-in + cloud sync (optional; local-first without it) ----------
+  const syncBase = () => (CFG.STRAVA_WORKER_URL || "").replace(/\/+$/, "");
+  const googleEnabled = () => !!(CFG.GOOGLE_CLIENT_ID && syncBase());
+  let googleIdToken = null;   // current ID token (ephemeral, ~1h)
+  let gisLoading = null;      // promise while Google's script loads
+  let googleSyncTimer = null;
+
+  function loadGIS() {
+    if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
+    if (gisLoading) return gisLoading;
+    gisLoading = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client"; s.async = true; s.defer = true;
+      s.onload = () => res(); s.onerror = () => rej(new Error("Could not load Google sign-in."));
+      document.head.appendChild(s);
+    });
+    return gisLoading;
+  }
+  function decodeJwt(t) {
+    try { return JSON.parse(decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))); }
+    catch (_) { return null; }
+  }
+  async function gisInit() {
+    await loadGIS();
+    google.accounts.id.initialize({ client_id: CFG.GOOGLE_CLIENT_ID, auto_select: true, callback: onGoogleCredential });
+  }
+  async function renderGoogleButton(el) {
+    if (!googleEnabled() || !el) return;
+    try { await gisInit(); google.accounts.id.renderButton(el, { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill" }); }
+    catch (e) { el.innerHTML = '<span class="tiny plan-err">Could not load Google sign-in.</span>'; }
+  }
+  // called by Google with a fresh ID token after sign-in (interactive or silent)
+  async function onGoogleCredential(resp) {
+    const t = resp && resp.credential; if (!t) return;
+    googleIdToken = t;
+    const p = decodeJwt(t) || {};
+    const first = !(S.googleUser && S.googleUser.sub);
+    S.googleUser = { sub: p.sub, email: p.email, name: p.name };
+    saveLocal();
+    if (first) toast("Signed in as " + (S.googleUser.email || "your account") + " 🌿");
+    await syncPull(true); // adopt cloud state if it is newer, then push ours up
+    syncPush();
+    if ($("#set-scrim")) openSettings(); else render();
+  }
+  // on app open, quietly refresh the token + pull any changes from another device
+  async function silentSync() {
+    if (!googleEnabled() || !(S.googleUser && S.googleUser.sub)) return;
+    try { await gisInit(); google.accounts.id.prompt(); } catch (_) {}
+  }
+  async function syncPull(adopt) {
+    if (!googleEnabled() || !googleIdToken) return;
+    try {
+      const r = await fetch(syncBase() + "/state", { headers: { Authorization: "Bearer " + googleIdToken } });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (adopt && j.state && (j.state.updatedAt || 0) > (S.updatedAt || 0)) {
+        S = migrate(j.state); applyPlan(); saveLocal(); render();
+        toast("Synced your meadow 🌿");
+      }
+    } catch (_) {}
+  }
+  function scheduleGoogleSync() {
+    if (!googleEnabled() || !(S.googleUser && S.googleUser.sub)) return;
+    clearTimeout(googleSyncTimer);
+    googleSyncTimer = setTimeout(syncPush, 1200);
+  }
+  async function syncPush() {
+    if (!googleEnabled() || !googleIdToken || !(S.googleUser && S.googleUser.sub)) return;
+    try {
+      const r = await fetch(syncBase() + "/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + googleIdToken },
+        body: JSON.stringify({ state: S }),
+      });
+      if (r.status === 401) { googleIdToken = null; silentSync(); } // token expired -> refresh
+    } catch (_) {}
+  }
+  function googleSignOut() {
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (_) {}
+    S.googleUser = null; googleIdToken = null; saveLocal();
   }
 
   // ---------- gamification ----------
@@ -1263,6 +1346,15 @@
           ${custom ? `<button class="btn ghost small" id="plan-reset" style="margin-top:10px">Reset to Bunny Meadow plan</button>` : ""}
         </div>
 
+        ${googleEnabled() ? `<div class="set-sec">
+          <div class="set-label">Account</div>
+          ${S.googleUser && S.googleUser.sub
+            ? `<div class="tiny muted" style="margin-bottom:8px">Signed in as <b>${esc(S.googleUser.email || S.googleUser.name || "your Google account")}</b>. Your meadow backs up and syncs across your devices automatically.</div>
+               <button class="btn ghost small" id="g-signout">Sign out</button>`
+            : `<p class="tiny muted" style="margin-bottom:10px">Sign in with Google to back up your meadow and sync it across your phone and laptop. Optional - the app works fine without it, and your data stays private to your account.</p>
+               <div id="g-btn"></div>`}
+        </div>` : ""}
+
         <button class="btn" id="set-done" style="margin-top:4px">Done</button>
       </div></div>`;
     const close = () => { $("#modal-root").innerHTML = ""; render(); };
@@ -1274,6 +1366,9 @@
     });
     const resetBtn = $("#plan-reset");
     if (resetBtn) resetBtn.onclick = () => { S.customPlan = null; touch(); applyPlan(); openSettings(); toast("Back to the Bunny Meadow plan"); };
+    // Account: render Google's sign-in button, or wire the sign-out
+    const gBtn = $("#g-btn"); if (gBtn) renderGoogleButton(gBtn);
+    const gOut = $("#g-signout"); if (gOut) gOut.onclick = () => { googleSignOut(); openSettings(); toast("Signed out"); };
     $("#plan-file").onchange = async (e) => {
       const file = e.target.files && e.target.files[0]; if (!file) return;
       const status = $("#plan-status");
@@ -1601,6 +1696,7 @@
     recomputeStreak();
     const justLinked = handleStravaReturn();
     render();
+    if (S.googleUser && S.googleUser.sub) setTimeout(silentSync, 600); // pull any changes from another device
     if (!S.starterDone && Object.keys(S.collection).length === 0) setTimeout(openStarter, 350);
     // keep runs fresh: sync on open if linked (and we did not just do it on return)
     else if (!justLinked && S.strava && S.strava.connected) {

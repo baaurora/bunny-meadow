@@ -12,12 +12,15 @@
     - STRAVA_CLIENT_SECRET secret (wrangler secret put STRAVA_CLIENT_SECRET)
     - APP_ORIGIN         optional var: the site allowed to receive the redirect,
                          e.g. https://baaurora.github.io
+    - GOOGLE_CLIENT_ID   optional var: enables cloud sync (the Google Sign-In client id)
 
   Routes:
-    GET /login?return=<appUrl>   -> bounce to Strava's consent screen
-    GET /callback?code&state     -> exchange code, store tokens, return to app
-    GET /activities?link=<id>&after=<unix>  -> recent activities as JSON (CORS)
-    GET /disconnect?link=<id>    -> forget tokens + deauthorize
+    GET  /login?return=<appUrl>  -> bounce to Strava's consent screen
+    GET  /callback?code&state    -> exchange code, store tokens, return to app
+    GET  /activities?link=<id>&after=<unix>  -> recent activities as JSON (CORS)
+    GET  /disconnect?link=<id>   -> forget tokens + deauthorize
+    GET  /state                  -> the signed-in Google account's saved app state
+    POST /state {state}          -> save the account's app state (cloud sync)
 */
 
 const STRAVA_AUTH = "https://www.strava.com/oauth/authorize";
@@ -30,8 +33,8 @@ const ALLOWED_HOSTS = ["localhost", "127.0.0.1"];
 function cors(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -137,9 +140,46 @@ export default {
       return json({ ok: true }, origin);
     }
 
+    // 5) Cloud sync: back up / restore the app's whole state, keyed to a Google account.
+    //    GET  -> the account's saved state (or null)
+    //    POST {state} -> save it
+    if (url.pathname === "/state") {
+      const user = await verifyGoogle(request, env);
+      if (!user) return json({ error: "unauthorized" }, origin, 401);
+      const key = "user:" + user.sub;
+      if (request.method === "GET") {
+        const raw = await env.STRAVA_TOKENS.get(key);
+        return json({ state: raw ? JSON.parse(raw) : null, email: user.email }, origin);
+      }
+      if (request.method === "POST") {
+        const body = await request.json().catch(() => null);
+        if (!body || !body.state) return json({ error: "bad body" }, origin, 400);
+        await env.STRAVA_TOKENS.put(key, JSON.stringify(body.state));
+        return json({ ok: true, updatedAt: body.state.updatedAt || 0 }, origin);
+      }
+      return json({ error: "method" }, origin, 405);
+    }
+
     return new Response("Bunny Meadow Strava connector", { status: 200, headers: cors(origin) });
   },
 };
+
+// Verify a Google Sign-In ID token and return the account, or null if invalid.
+// Uses Google's tokeninfo endpoint (checks signature + expiry); we additionally
+// require that the token was issued for OUR app (aud === GOOGLE_CLIENT_ID).
+async function verifyGoogle(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (!m || !env.GOOGLE_CLIENT_ID) return null;
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(m[1]));
+    if (!res.ok) return null;
+    const info = await res.json();
+    if (!info || info.aud !== env.GOOGLE_CLIENT_ID) return null;
+    if (info.exp && Number(info.exp) * 1000 < Date.now()) return null;
+    return { sub: info.sub, email: info.email, name: info.name };
+  } catch (_) { return null; }
+}
 
 // POST to Strava's token endpoint (used for both the first exchange and refreshes).
 async function exchange(env, extra) {

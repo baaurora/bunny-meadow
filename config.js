@@ -9,4 +9,8 @@ window.CONFIG = {
   // Strava: paste the deployed Cloudflare Worker URL here to turn on "Connect Strava".
   // Until it is set, the Connect button explains the one-time setup. See worker/README.md.
   STRAVA_WORKER_URL: "https://bunny-strava.bianca-r-pagano.workers.dev",
+  // Google sign-in (optional cloud backup + sync across devices). Paste the Google
+  // OAuth Client ID here to turn it on. The sync API is the same Worker as Strava.
+  // When empty, the app is local-only (no account, data stays on the phone).
+  GOOGLE_CLIENT_ID: "",
 };
