@@ -176,9 +176,9 @@
   applyPlan(); // activate a saved custom plan, if any, before the first render
 
   function dayState(iso) {
-    if (!S.days[iso]) S.days[iso] = { checks: {}, granted: {}, flags: {}, log: {} };
+    if (!S.days[iso]) S.days[iso] = { checks: {}, granted: {}, flags: {}, log: {}, meals: {} };
     const d = S.days[iso];
-    d.checks = d.checks || {}; d.granted = d.granted || {}; d.flags = d.flags || {}; d.log = d.log || {};
+    d.checks = d.checks || {}; d.granted = d.granted || {}; d.flags = d.flags || {}; d.log = d.log || {}; d.meals = d.meals || {};
     return d;
   }
   function saveLocal() { try { localStorage.setItem(LS_STATE, JSON.stringify(S)); } catch (e) {} }
@@ -534,12 +534,17 @@
         <div class="progressbar"><span style="width:${pct}%"></span></div>
         <p class="tiny muted" style="margin:2px 0 12px">Check off what you actually did. You earn lettuce for each one.</p>
         <div class="checklist">
-          ${items.map((it) => `
+          ${items.map((it) => {
+            const planned = (ds.meals && ds.meals[it.key]) || [];
+            const sub = (it.key === "movement" && note) ? note
+              : (planned.length ? planned.join(" · ") : (it.sub || ""));
+            return `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
               <span class="box">${ds.checks[it.key] ? "✓" : ""}</span>
               <span class="emoji">${it.emoji}</span>
-              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub">${esc((it.key === "movement" && note) ? note : it.sub || "")}</span></span>
-            </button>`).join("")}
+              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub ${planned.length ? "planned" : ""}">${esc(sub)}</span></span>
+            </button>`;
+          }).join("")}
         </div>
       </div>
 
@@ -812,6 +817,48 @@
   }
   function mealByName(name) { return allMeals().find((m) => m.name === name); }
 
+  // ---------- "Add to today": plan a recipe onto one of today's meal slots ----------
+  const MEAL_SLOTS = [["breakfast", "Breakfast", "🍳"], ["lunch", "Lunch", "🥗"], ["dinner", "Dinner", "🍽️"], ["snacks", "Snack", "🍎"]];
+  function slotLabel(slot) { const s = MEAL_SLOTS.find((x) => x[0] === slot); return s ? s[1].toLowerCase() : slot; }
+  // which of today's slots a given recipe is already planned into
+  function slotsForMeal(name) {
+    const ds = dayState(planToday());
+    return MEAL_SLOTS.filter(([k]) => (ds.meals[k] || []).includes(name)).map(([, l]) => l);
+  }
+  function toggleMealToday(name, slot) {
+    const ds = dayState(planToday());
+    const arr = ds.meals[slot] = ds.meals[slot] || [];
+    const i = arr.indexOf(name);
+    if (i >= 0) { arr.splice(i, 1); toast("Removed " + name + " from " + slotLabel(slot)); }
+    else { arr.push(name); toast("Added " + name + " to " + slotLabel(slot) + " 🥕"); }
+    touch();
+  }
+  // sheet: pick which meal slot this recipe belongs to (tap a slot again to remove it)
+  function openAddToToday(name) {
+    const close = () => { $("#modal-root").innerHTML = ""; render(); };
+    const draw = () => {
+      const ds = dayState(planToday());
+      $("#modal-root").innerHTML = `
+        <div class="modal-scrim" id="a2t-scrim">
+          <div class="sheet a2t">
+            <h2 style="margin:0 0 2px">Add to today</h2>
+            <p class="tiny muted" style="margin:0 0 14px">Which meal is <b>${esc(name)}</b>? Tap again to remove it.</p>
+            <div class="a2t-slots">
+              ${MEAL_SLOTS.map(([k, l, e]) => {
+                const on = (ds.meals[k] || []).includes(name);
+                return `<button class="a2t-slot ${on ? "on" : ""}" data-slot="${k}"><span class="a2t-emoji">${e}</span>${l}${on ? " ✓" : ""}</button>`;
+              }).join("")}
+            </div>
+            <button class="btn small ghost" id="a2t-done" style="margin-top:16px">Done</button>
+          </div>
+        </div>`;
+      $("#a2t-scrim").onclick = (e) => { if (e.target.id === "a2t-scrim") close(); };
+      $("#a2t-done").onclick = close;
+      $("#modal-root").querySelectorAll(".a2t-slot").forEach((b) => b.onclick = () => { toggleMealToday(name, b.dataset.slot); draw(); });
+    };
+    draw();
+  }
+
   SCREENS.food = function () {
     const mealFilter = SCREENS.food._filter || "All";
     const q = (SCREENS.food._q || "").toLowerCase();
@@ -828,14 +875,17 @@
       <div class="filterrow">${types.map((t) => `<button class="mfilter ${t === mealFilter ? "on" : ""}" data-mf="${t}">${t}</button>`).join("")}</div>
       <div class="meal-list">
         ${meals.map((m) => `
-          <button class="meal-card" data-meal="${esc(m.name)}">
-            <div class="meal-card-main">
-              <div class="meal-card-top"><b>${esc(m.name)}</b>${m.mine ? '<span class="typebadge type-yours">Yours</span>' : ""}<span class="typebadge type-${(m.type || "").toLowerCase()}">${esc(m.type)}</span></div>
-              ${m.cal != null ? `<div class="tiny muted">${m.cal} cal${m.protein != null ? ` · ${m.protein}g protein` : ""}${m.fiber != null ? ` · ${m.fiber}g fiber` : ""}</div>` : ""}
-              <div class="tiny meal-why">${esc(m.why || (m.mine ? "Your recipe" : ""))}</div>
-            </div>
-            <span class="meal-chev">${chevron}</span>
-          </button>`).join("") || '<p class="muted tiny center" style="padding:20px">No meals match.</p>'}
+          <div class="meal-row">
+            <button class="meal-card" data-meal="${esc(m.name)}">
+              <div class="meal-card-main">
+                <div class="meal-card-top"><b>${esc(m.name)}</b>${m.mine ? '<span class="typebadge type-yours">Yours</span>' : ""}<span class="typebadge type-${(m.type || "").toLowerCase()}">${esc(m.type)}</span></div>
+                ${m.cal != null ? `<div class="tiny muted">${m.cal} cal${m.protein != null ? ` · ${m.protein}g protein` : ""}${m.fiber != null ? ` · ${m.fiber}g fiber` : ""}</div>` : ""}
+                <div class="tiny meal-why">${esc(m.why || (m.mine ? "Your recipe" : ""))}</div>
+              </div>
+              <span class="meal-chev">${chevron}</span>
+            </button>
+            <button class="a2t-btn" data-add="${esc(m.name)}" title="Add ${esc(m.name)} to today"><span class="a2t-plus">＋</span><span>Today</span></button>
+          </div>`).join("") || '<p class="muted tiny center" style="padding:20px">No meals match.</p>'}
       </div>
     `;
   };
@@ -856,6 +906,10 @@
         <h1>${esc(m.name)}</h1>
         <div class="muted" style="max-width:340px;margin:6px auto 0">${esc(m.why || (m.mine ? "Your recipe" : ""))}</div>
         ${m.mine ? `<div style="margin-top:8px"><button class="btn small ghost" data-recipe-edit="${esc(m.name)}">Edit</button> <button class="btn small ghost" data-recipe-del="${esc(m.name)}">Delete</button></div>` : ""}
+      </div>
+      <div style="text-align:center;margin:-4px 0 12px">
+        <button class="btn small a2t-cta" data-add="${esc(m.name)}">🥕 Add to today</button>
+        ${slotsForMeal(m.name).length ? `<div class="tiny muted" style="margin-top:7px">On today's list: ${esc(slotsForMeal(m.name).join(", "))}</div>` : ""}
       </div>
       ${hasNut ? `<div class="card">
         <h2>Nutrition</h2>
@@ -1643,6 +1697,8 @@
     view.querySelectorAll("[data-go]").forEach((el) => el.onclick = () => go(el.dataset.go));
     // meal card -> detail page
     view.querySelectorAll("[data-meal]").forEach((el) => el.onclick = () => go("meal", { meal: el.dataset.meal }));
+    // "Add to today" -> pick a meal slot for this recipe
+    view.querySelectorAll("[data-add]").forEach((el) => el.onclick = (e) => { e.stopPropagation(); openAddToToday(el.dataset.add); });
     // recipes: add / edit / delete your own
     view.querySelectorAll("[data-recipe-new]").forEach((el) => el.onclick = () => openRecipeForm(null));
     view.querySelectorAll("[data-recipe-edit]").forEach((el) => el.onclick = () => openRecipeForm(el.dataset.recipeEdit));
