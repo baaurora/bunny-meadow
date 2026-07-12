@@ -179,6 +179,8 @@
     if (!S.days[iso]) S.days[iso] = { checks: {}, granted: {}, flags: {}, log: {}, meals: {} };
     const d = S.days[iso];
     d.checks = d.checks || {}; d.granted = d.granted || {}; d.flags = d.flags || {}; d.log = d.log || {}; d.meals = d.meals || {};
+    // meals were once stored as plain name strings; upgrade them to { name, cal } objects
+    for (const k in d.meals) { const a = d.meals[k]; if (a && a.some((m) => typeof m === "string")) d.meals[k] = a.map((m) => (typeof m === "string" ? { name: m } : m)); }
     return d;
   }
   function saveLocal() { try { localStorage.setItem(LS_STATE, JSON.stringify(S)); } catch (e) {} }
@@ -535,14 +537,21 @@
         <p class="tiny muted" style="margin:2px 0 12px">Check off what you actually did. You earn lettuce for each one.</p>
         <div class="checklist">
           ${items.map((it) => {
+            const isMeal = MEAL_SLOT_KEYS.includes(it.key);
             const planned = (ds.meals && ds.meals[it.key]) || [];
-            const sub = (it.key === "movement" && note) ? note
-              : (planned.length ? planned.join(" · ") : (it.sub || ""));
+            let sub;
+            if (it.key === "movement" && note) sub = note;
+            else if (isMeal && planned.length) {
+              const c = slotCal(viewISO, it.key);
+              sub = planned.map((m) => mealName(m)).join(", ") + (c > 0 ? " · " + c + " cal" : "");
+            } else if (isMeal) sub = "Tap to add what you ate";
+            else sub = it.sub || "";
             return `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
               <span class="box">${ds.checks[it.key] ? "✓" : ""}</span>
               <span class="emoji">${it.emoji}</span>
-              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub ${planned.length ? "planned" : ""}">${esc(sub)}</span></span>
+              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub ${isMeal && planned.length ? "planned" : ""}">${esc(sub)}</span></span>
+              ${isMeal ? `<span class="meal-chev">${chevron}</span>` : ""}
             </button>`;
           }).join("")}
         </div>
@@ -817,23 +826,54 @@
   }
   function mealByName(name) { return allMeals().find((m) => m.name === name); }
 
-  // ---------- "Add to today": plan a recipe onto one of today's meal slots ----------
+  // ---------- meals on today's list (each carries its calories) ----------
+  // A planned meal is { name, cal }. Logging a meal into a slot marks that slot done
+  // + earns lettuce once, and the day's calories are summed into the check-in below.
   const MEAL_SLOTS = [["breakfast", "Breakfast", "🍳"], ["lunch", "Lunch", "🥗"], ["dinner", "Dinner", "🍽️"], ["snacks", "Snack", "🍎"]];
+  const MEAL_SLOT_KEYS = MEAL_SLOTS.map((s) => s[0]);
   function slotLabel(slot) { const s = MEAL_SLOTS.find((x) => x[0] === slot); return s ? s[1].toLowerCase() : slot; }
-  // which of today's slots a given recipe is already planned into
+  const mealName = (m) => (typeof m === "string" ? m : (m && m.name)) || "";
+  const mealCal = (m) => (m && typeof m === "object" && m.cal != null && m.cal !== "" && !isNaN(m.cal)) ? Number(m.cal) : null;
+  function slotItems(iso, slot) { return dayState(iso).meals[slot] || []; }
+  function slotCal(iso, slot) { return slotItems(iso, slot).reduce((s, m) => s + (mealCal(m) || 0), 0); }
+  function mealCalTotal(iso) { return MEAL_SLOT_KEYS.reduce((s, k) => s + slotCal(iso, k), 0); }
+  // keep the check-in's "calories eaten" in step with the meals logged for the day
+  function syncMealCalories(iso) {
+    const ds = dayState(iso), t = mealCalTotal(iso);
+    ds.log = ds.log || {};
+    if (t > 0) ds.log.actualCal = t; else delete ds.log.actualCal;
+  }
+  // adding/removing a meal keeps that slot's checkbox, lettuce and calories in sync
+  function onMealsChanged(iso, slot) {
+    const ds = dayState(iso), has = slotItems(iso, slot).length > 0;
+    if (has && !ds.checks[slot]) {
+      ds.checks[slot] = true;
+      if (!ds.granted[slot]) { ds.granted[slot] = true; S.clovers += lettuceReward(); }
+    } else if (!has && ds.checks[slot]) {
+      ds.checks[slot] = false;
+    }
+    syncMealCalories(iso);
+    evaluateDay(iso); recomputeStreak(); touch();
+  }
+  function addMealEntry(iso, slot, name, cal) {
+    (dayState(iso).meals[slot] = dayState(iso).meals[slot] || []).push({ name: name, cal: (cal == null || isNaN(cal)) ? undefined : cal });
+    onMealsChanged(iso, slot);
+  }
+  function removeMealEntry(iso, slot, idx) { (dayState(iso).meals[slot] || []).splice(idx, 1); onMealsChanged(iso, slot); }
+  // which of today's slots a given recipe is already on
   function slotsForMeal(name) {
     const ds = dayState(planToday());
-    return MEAL_SLOTS.filter(([k]) => (ds.meals[k] || []).includes(name)).map(([, l]) => l);
+    return MEAL_SLOTS.filter(([k]) => (ds.meals[k] || []).some((m) => mealName(m) === name)).map(([, l]) => l);
   }
+  // Food's "Add to today" toggles a menu recipe onto a slot, carrying its calories
   function toggleMealToday(name, slot) {
-    const ds = dayState(planToday());
-    const arr = ds.meals[slot] = ds.meals[slot] || [];
-    const i = arr.indexOf(name);
+    const iso = planToday(), arr = dayState(iso).meals[slot] = dayState(iso).meals[slot] || [];
+    const i = arr.findIndex((m) => mealName(m) === name);
     if (i >= 0) { arr.splice(i, 1); toast("Removed " + name + " from " + slotLabel(slot)); }
-    else { arr.push(name); toast("Added " + name + " to " + slotLabel(slot) + " 🥕"); }
-    touch();
+    else { const meal = mealByName(name); arr.push({ name: name, cal: meal && meal.cal != null ? meal.cal : undefined }); toast("Added " + name + " to " + slotLabel(slot) + " 🥕"); }
+    onMealsChanged(iso, slot);
   }
-  // sheet: pick which meal slot this recipe belongs to (tap a slot again to remove it)
+  // sheet: pick which meal slot a Food recipe belongs to (tap a slot again to remove it)
   function openAddToToday(name) {
     const close = () => { $("#modal-root").innerHTML = ""; render(); };
     const draw = () => {
@@ -845,7 +885,7 @@
             <p class="tiny muted" style="margin:0 0 14px">Which meal is <b>${esc(name)}</b>? Tap again to remove it.</p>
             <div class="a2t-slots">
               ${MEAL_SLOTS.map(([k, l, e]) => {
-                const on = (ds.meals[k] || []).includes(name);
+                const on = (ds.meals[k] || []).some((m) => mealName(m) === name);
                 return `<button class="a2t-slot ${on ? "on" : ""}" data-slot="${k}"><span class="a2t-emoji">${e}</span>${l}${on ? " ✓" : ""}</button>`;
               }).join("")}
             </div>
@@ -855,6 +895,60 @@
       $("#a2t-scrim").onclick = (e) => { if (e.target.id === "a2t-scrim") close(); };
       $("#a2t-done").onclick = close;
       $("#modal-root").querySelectorAll(".a2t-slot").forEach((b) => b.onclick = () => { toggleMealToday(name, b.dataset.slot); draw(); });
+    };
+    draw();
+  }
+  // editor opened by tapping a meal row on Today: type a meal or pick from the food
+  // menu (auto-fills its calories), add a calorie count, remove items, see the total
+  function openMealSlot(slot, iso) {
+    iso = iso || viewISO;
+    const meta = MEAL_SLOTS.find((s) => s[0] === slot) || [slot, slot, "🍽️"];
+    const menu = allMeals();
+    const close = () => { $("#modal-root").innerHTML = ""; render(); };
+    const draw = () => {
+      const items = slotItems(iso, slot), total = slotCal(iso, slot);
+      $("#modal-root").innerHTML = `
+        <div class="modal-scrim" id="ms-scrim">
+          <div class="sheet ms">
+            <h2 style="margin:0 0 2px">${meta[2]} ${esc(meta[1])}</h2>
+            <p class="tiny muted" style="margin:0 0 12px">What did you eat? Type it or pick from your food menu, then add the calories.</p>
+            <div class="ms-list">
+              ${items.length ? items.map((m, i) => `
+                <div class="ms-item">
+                  <span class="ms-name">${esc(mealName(m))}</span>
+                  <span class="ms-cal">${mealCal(m) != null ? mealCal(m) + " cal" : "—"}</span>
+                  <button class="ms-del" data-del="${i}" aria-label="Remove ${esc(mealName(m))}">✕</button>
+                </div>`).join("") : `<p class="tiny muted center" style="padding:8px 0">Nothing logged yet.</p>`}
+            </div>
+            ${total > 0 ? `<div class="ms-total">Total <b>${total} cal</b></div>` : ""}
+            <div class="ms-add">
+              <input id="ms-name" class="ms-input" list="ms-menu" placeholder="Meal (type or pick)" autocomplete="off">
+              <input id="ms-cal" class="ms-input ms-calin" type="number" inputmode="numeric" placeholder="cal">
+              <button class="btn small" id="ms-add">Add</button>
+            </div>
+            <datalist id="ms-menu">${menu.map((m) => `<option value="${esc(m.name)}"${m.cal != null ? ` label="${m.cal} cal"` : ""}>`).join("")}</datalist>
+            <button class="btn ghost small" id="ms-done" style="margin-top:14px">Done</button>
+          </div>
+        </div>`;
+      const nameEl = $("#ms-name"), calEl = $("#ms-cal");
+      $("#ms-scrim").onclick = (e) => { if (e.target.id === "ms-scrim") close(); };
+      $("#ms-done").onclick = close;
+      // picking / typing a menu meal auto-fills its calories (unless she already typed some)
+      nameEl.oninput = () => {
+        const hit = menu.find((m) => m.name.toLowerCase() === nameEl.value.trim().toLowerCase());
+        if (hit && hit.cal != null && calEl.value.trim() === "") calEl.value = hit.cal;
+      };
+      const add = () => {
+        const name = nameEl.value.trim();
+        if (!name) { nameEl.focus(); return; }
+        const c = calEl.value.trim();
+        addMealEntry(iso, slot, name, c === "" ? undefined : +c);
+        draw(); $("#ms-name").focus();
+      };
+      $("#ms-add").onclick = add;
+      nameEl.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); calEl.value.trim() === "" ? calEl.focus() : add(); } };
+      calEl.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
+      $("#modal-root").querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { removeMealEntry(iso, slot, +b.dataset.del); draw(); });
     };
     draw();
   }
@@ -1071,8 +1165,9 @@
             <div class="field"><label>Weight (lb)</label><input id="lg-weight" type="number" inputmode="decimal" value="${L.weight ?? ""}"></div>
             <div class="field"><label>Body fat %</label><input id="lg-bf" type="number" inputmode="decimal" value="${L.bodyfat ?? ""}"></div>
             <div class="field"><label>Sleep (hrs)</label><input id="lg-sleep" type="number" inputmode="decimal" value="${L.sleep ?? ""}"></div>
-            <div class="field"><label>Calories eaten</label><input id="lg-cal" type="number" inputmode="numeric" value="${L.actualCal ?? ""}"></div>
+            <div class="field"><label>Calories eaten</label><div class="lg-cal-sum">${mealCalTotal(iso)}<span class="lg-cal-note"> from meals</span></div></div>
           </div>
+          <p class="tiny muted" style="margin:-4px 0 8px">Calories add up from the meals you log on the Today list.</p>
           <div class="field"><label>Mood</label>
             <div class="moodrow">${MOODS.map((m, i) => `<button type="button" class="mood ${L.mood === i ? "sel" : ""}" data-mood="${i}" title="${m.label}">${m.e}</button>`).join("")}</div>
           </div>
@@ -1093,9 +1188,10 @@
       const num = (id) => { const v = $("#" + id).value.trim(); return v === "" ? undefined : +v; };
       ds.log = Object.assign({}, ds.log, {
         weight: num("lg-weight"), bodyfat: num("lg-bf"),
-        sleep: num("lg-sleep"), actualCal: num("lg-cal"), mood, notes: $("#lg-notes").value.trim() || undefined,
+        sleep: num("lg-sleep"), mood, notes: $("#lg-notes").value.trim() || undefined,
       });
-      const hasAny = ["weight", "bodyfat", "sleep", "actualCal", "mood", "notes"].some((k) => ds.log[k] !== undefined);
+      syncMealCalories(iso); // calories eaten come from the meals logged, not typed here
+      const hasAny = ["weight", "bodyfat", "sleep", "mood", "notes"].some((k) => ds.log[k] !== undefined);
       $("#modal-root").innerHTML = "";
       if (hasAny && !ds.checks.log) { toggleCheck(iso, { key: "log" }); }
       else { touch(); render(); flushAwards(); }
@@ -1673,6 +1769,7 @@
     view.querySelectorAll("[data-check]").forEach((el) => el.onclick = () => {
       const key = el.dataset.check;
       if (key === "log") { openLog(viewISO); return; }
+      if (MEAL_SLOT_KEYS.includes(key)) { openMealSlot(key, viewISO); return; } // meals open an editor (name + calories)
       const item = itemsFor().find((i) => i.key === key);
       toggleCheck(viewISO, item);
     });
