@@ -19,6 +19,8 @@
     { id: "acorn", breed: "Mini Lop", nick: "Acorn", rarity: "uncommon", poses: 3 },
     { id: "marmalade", breed: "Thrianta", nick: "Marmalade", rarity: "uncommon", poses: 3 },
     { id: "frost", breed: "Himalayan", nick: "Frost", rarity: "uncommon", poses: 2 },
+    { id: "toffee", breed: "Tan", nick: "Toffee", rarity: "uncommon", poses: 2 },
+    { id: "pearl", breed: "Florida White", nick: "Pearl", rarity: "uncommon", poses: 3 },
 
     { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 3 },
     { id: "cloud", breed: "Angora", nick: "Cloud", rarity: "rare", poses: 3 },
@@ -26,6 +28,7 @@
     { id: "honey", breed: "Palomino", nick: "Honey", rarity: "rare", poses: 3 },
 
     { id: "patch", breed: "Harlequin", nick: "Patch", rarity: "epic", poses: 3 },
+    { id: "bandit", breed: "English Spot", nick: "Bandit", rarity: "epic", poses: 3 },
 
     { id: "sylvia", breed: "Lionhead", nick: "Sylvia", rarity: "legendary", poses: 3 },
   ];

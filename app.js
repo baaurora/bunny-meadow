@@ -978,6 +978,61 @@
     draw();
   }
 
+  // Build a categorized grocery list from the meal library's ingredients - no API, no
+  // backend, works offline. Used when the user is on their own uploaded plan (which
+  // brings a schedule but no grocery list of its own).
+  function generateGrocery() {
+    const cats = [["Produce", "🥬"], ["Proteins", "🍗"], ["Carbs", "🌾"], ["Fats", "🥑"], ["Pantry", "🧂"]];
+    const bucket = { Produce: new Set(), Proteins: new Set(), Carbs: new Set(), Fats: new Set(), Pantry: new Set() };
+    const classify = (s) => {
+      s = s.toLowerCase();
+      if (/spinach|kale|arugula|lettuce|greens|berry|berries|banana|apple|orange|melon|grape|broccoli|pepper|tomato|onion|garlic|avocado|carrot|cucumber|zucchini|squash|sweet potato|potato|mushroom|lemon|lime|celery|beet|cabbage|cauliflower|pea|corn|fruit|veg|cilantro|basil|parsley|ginger|kiwi/.test(s)) return "Produce";
+      if (/chicken|turkey|beef|pork|salmon|tuna|cod|fish|shrimp|egg|yogurt|greek|tofu|tempeh|edamame|bean|lentil|chickpea|cottage|milk|cheese|whey|protein/.test(s)) return "Proteins";
+      if (/oat|rice|pasta|bread|quinoa|tortilla|bagel|cereal|granola|couscous|noodle|cracker|wrap|bun|pita|farro|barley|pretzel|maple|honey/.test(s)) return "Carbs";
+      if (/olive oil|avocado|almond|walnut|pecan|cashew|pistachio|nut|seed|peanut|tahini|chia|flax|butter|coconut| oil/.test(s)) return "Fats";
+      return "Pantry";
+    };
+    allMeals().forEach((m) => {
+      const r = m.mine ? m : (window.MEALS || {})[m.name];
+      ((r && r.ingredients) || []).forEach((i) => {
+        const item = ((i && i.item) || "").toString().trim();
+        if (item && item.length < 42) bucket[classify(item)].add(item.charAt(0).toUpperCase() + item.slice(1));
+      });
+    });
+    return cats.map(([name, emoji]) => ({ name, emoji, items: [...bucket[name]].sort().slice(0, 18) })).filter((c) => c.items.length);
+  }
+  // The grocery section that lives on the Food tab. Uses the plan's own weekly grocery
+  // when there is one (the built-in sample / an uploaded plan that includes it), and
+  // otherwise generates a list from the meal library.
+  function groceryContent() {
+    if (S.customPlan) {
+      const cats = generateGrocery();
+      return `<div class="card">
+        <h2>Suggested weekly grocery for marathon training</h2>
+        <p class="tiny muted" style="margin:2px 0 12px">Built from your meal library since your uploaded plan doesn't include a grocery list. A starting point, not a rule.</p>
+        ${cats.length ? cats.map((c) => `<div class="grocery-cat"><div class="grocery-cat-h">${c.emoji} ${c.name}</div><div class="grocery-items">${c.items.map((i) => esc(i)).join(" · ")}</div></div>`).join("")
+          : '<p class="muted tiny center" style="padding:14px 0">Add some recipes and this will fill in.</p>'}
+      </div>`;
+    }
+    const curWeek = (dayByISO(planToday()) || {}).week;
+    return `<div class="card">
+      <h2>Suggested weekly grocery for marathon training</h2>
+      <p class="tiny muted" style="margin:2px 0 6px">A shopping starting point, not a rule. This week is week ${curWeek}.</p>
+      ${PLAN.grocery.map((g) => `
+        <details ${g.week === curWeek ? "open" : ""} class="grocery-wk">
+          <summary>Week ${g.week} · ${esc(g.dates)}</summary>
+          <div class="tiny" style="padding:6px 0">
+            <div><b>Produce.</b> ${esc(g.produce)}</div>
+            <div><b>Proteins.</b> ${esc(g.proteins)}</div>
+            <div><b>Carbs.</b> ${esc(g.carbs)}</div>
+            <div><b>Fats.</b> ${esc(g.fats)}</div>
+            <div><b>Pantry.</b> ${esc(g.pantry)}</div>
+            <div class="muted" style="margin-top:3px">${esc(g.notes)}</div>
+          </div>
+        </details>`).join("")}
+    </div>`;
+  }
+
   SCREENS.food = function () {
     const mealFilter = SCREENS.food._filter || "All";
     const q = (SCREENS.food._q || "").toLowerCase();
@@ -1006,6 +1061,7 @@
             <button class="a2t-btn" data-add="${esc(m.name)}" title="Add ${esc(m.name)} to today"><span class="a2t-plus">＋</span><span>Today</span></button>
           </div>`).join("") || '<p class="muted tiny center" style="padding:20px">No meals match.</p>'}
       </div>
+      ${groceryContent()}
     `;
   };
 
@@ -1160,22 +1216,6 @@
       <div class="card">
         <h2>Fueling guide</h2>
         ${PLAN.fuelGuide.map((f) => `<div class="meal-row"><span class="when">${esc(f.timing)}</span><span class="what"><b>${esc(f.scenario)}</b>. ${esc(f.what)}<br/><span class="tiny muted">${esc(f.goal)}</span></span></div>`).join("")}
-      </div>
-      <div class="card">
-        <h2>Suggested weekly grocery</h2>
-        <p class="tiny muted" style="margin:2px 0 6px">A shopping starting point, not a rule. This week is week ${curWeek}.</p>
-        ${PLAN.grocery.map((g) => `
-          <details ${g.week === curWeek ? "open" : ""} class="grocery-wk">
-            <summary>Week ${g.week} · ${esc(g.dates)}</summary>
-            <div class="tiny" style="padding:6px 0">
-              <div><b>Produce.</b> ${esc(g.produce)}</div>
-              <div><b>Proteins.</b> ${esc(g.proteins)}</div>
-              <div><b>Carbs.</b> ${esc(g.carbs)}</div>
-              <div><b>Fats.</b> ${esc(g.fats)}</div>
-              <div><b>Pantry.</b> ${esc(g.pantry)}</div>
-              <div class="muted" style="margin-top:3px">${esc(g.notes)}</div>
-            </div>
-          </details>`).join("")}
       </div>
       <div class="card">
         <h2>Sources</h2>

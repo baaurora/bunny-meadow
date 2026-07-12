@@ -427,6 +427,11 @@ a { color: var(--lavender-deep); }
 .ms-src { font-size: 0.6rem; color: var(--ink-faint); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 /* Trends: mood emoji trail */
 .moodtrail { display: flex; gap: 8px; flex-wrap: wrap; font-size: 1.5rem; line-height: 1; }
+/* generated grocery categories (Food tab) */
+.grocery-cat { padding: 8px 0; border-top: 1px solid var(--line); }
+.grocery-cat:first-of-type { border-top: none; }
+.grocery-cat-h { font-weight: 700; font-size: 0.9rem; margin-bottom: 3px; }
+.grocery-items { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.5; }
 .meal-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border-radius: var(--radius-sm); padding: 12px 14px; box-shadow: var(--shadow-soft); transition: transform 0.12s; }
 .meal-card:active { transform: scale(0.99); }
 .meal-card-main { flex: 1; min-width: 0; }
