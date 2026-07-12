@@ -419,6 +419,11 @@ a { color: var(--lavender-deep); }
 /* check-in: calories eaten are summed from meals, shown read-only */
 .lg-cal-sum { padding: 11px 12px; border-radius: var(--radius-sm); background: var(--mint); color: #2f6249; font-weight: 700; font-size: 1rem; }
 .lg-cal-sum .lg-cal-note { font-weight: 600; font-size: 0.78rem; opacity: 0.8; }
+/* movement editor: Strava row + synced-activity tag */
+.mv-strava { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--bg-2); border-radius: 14px; padding: 10px 12px; margin-top: 14px; }
+.ms-src { font-size: 0.6rem; color: var(--ink-faint); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+/* Trends: mood emoji trail */
+.moodtrail { display: flex; gap: 8px; flex-wrap: wrap; font-size: 1.5rem; line-height: 1; }
 .meal-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border-radius: var(--radius-sm); padding: 12px 14px; box-shadow: var(--shadow-soft); transition: transform 0.12s; }
 .meal-card:active { transform: scale(0.99); }
 .meal-card-main { flex: 1; min-width: 0; }

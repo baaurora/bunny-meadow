@@ -61,13 +61,6 @@
     const dt = new Date(y, m - 1, d);
     return dt.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   }
-  // step an ISO date by whole days, staying inside the plan window
-  function shiftISO(iso, delta) {
-    const [y, m, d] = iso.split("-").map(Number);
-    const dt = new Date(y, m - 1, d + delta);
-    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-    return dayIndex[next] != null ? next : iso;
-  }
   const RUN_TYPES = ["Long Run", "Workout", "Easy Run", "Race"];
   const MOODS = [
     { e: "😄", label: "Great" }, { e: "🙂", label: "Good" }, { e: "😐", label: "Okay" },
@@ -86,8 +79,7 @@
 
   // Which bottom-nav tab lights up for a given route (sub-pages map to a parent).
   const NAV_FOR = { today: "today", plan: "plan", food: "food", meal: "food", meadow: "meadow", dex: "dex" };
-  let planTab = "workouts"; // Plan page slide-bar: workouts | trends | marathon
-  let woDate = null; // chosen date on the Workouts recorder (null = real today)
+  let planTab = "trends"; // Plan page slide-bar: trends | marathon
 
   function go(r, opts) {
     if (r === "meadow" && route !== "meadow") { meadowSeed = (meadowSeed + 1) % 997; wokeBunnies = new Set(); }
@@ -510,7 +502,6 @@
     const idx = dayIndex[viewISO];
     const isToday = viewISO === planToday();
     const todaysBunnies = todaysAwardStrip(viewISO);
-    const note = (ds.log && ds.log.movementNote) || "";
 
     // steady daily nutrition aims from her lab work (not tied to a training day)
     const aimMap = { "Protein target": "Protein", "Fiber target": "Fiber", "Sodium target": "Sodium", "Potassium target": "Potassium", "Saturated fat target": "Sat fat" };
@@ -538,29 +529,28 @@
         <div class="checklist">
           ${items.map((it) => {
             const isMeal = MEAL_SLOT_KEYS.includes(it.key);
+            const isMove = it.key === "movement";
+            const opens = isMeal || isMove; // rows that open an editor (show a chevron)
             const planned = (ds.meals && ds.meals[it.key]) || [];
-            let sub;
-            if (it.key === "movement" && note) sub = note;
-            else if (isMeal && planned.length) {
+            let sub, filled = false;
+            if (isMove) {
+              const w = (S.workouts && S.workouts[viewISO]) || [];
+              if (w.length) { sub = w.map((x) => x.type + (x.minutes ? " " + x.minutes + "m" : "")).join(", "); filled = true; }
+              else sub = "Tap to log a workout";
+            } else if (isMeal && planned.length) {
               const c = slotCal(viewISO, it.key);
-              sub = planned.map((m) => mealName(m)).join(", ") + (c > 0 ? " · " + c + " cal" : "");
+              sub = planned.map((m) => mealName(m)).join(", ") + (c > 0 ? " · " + c + " cal" : ""); filled = true;
             } else if (isMeal) sub = "Tap to add what you ate";
             else sub = it.sub || "";
             return `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
               <span class="box">${ds.checks[it.key] ? "✓" : ""}</span>
               <span class="emoji">${it.emoji}</span>
-              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub ${isMeal && planned.length ? "planned" : ""}">${esc(sub)}</span></span>
-              ${isMeal ? `<span class="meal-chev">${chevron}</span>` : ""}
+              <span class="txt"><span class="label">${esc(it.label)}</span><span class="sub ${filled ? "planned" : ""}">${esc(sub)}</span></span>
+              ${opens ? `<span class="meal-chev">${chevron}</span>` : ""}
             </button>`;
           }).join("")}
         </div>
-      </div>
-
-      <div class="card">
-        <h2>What did you do today?</h2>
-        <p class="tiny muted" style="margin:2px 0 8px">Jot your workout or anything worth remembering. Optional.</p>
-        <textarea id="activity-note" class="activity-note" rows="2" placeholder="e.g. 6 mile easy run, felt strong">${esc(note)}</textarea>
       </div>
 
       ${todaysBunnies}
@@ -789,6 +779,22 @@
         })
       : `<p class="muted tiny center" style="padding:24px 0">Log your weight (Today - Daily check-in) to see the trend toward ${PLAN.meta.goalWeightLb} lb.</p>`;
 
+    // calories eaten over time (summed from the meals logged each day)
+    const calPts = PLAN.days.map((d) => ({ x: isoToNum(d.date), y: mealCalTotal(d.date) })).filter((p) => p.y > 0);
+    const avgCal = calPts.length ? Math.round(calPts.reduce((a, p) => a + p.y, 0) / calPts.length) : null;
+    const calChart = calPts.length
+      ? lineChart({
+          series: [{ points: calPts, color: "#7cc6a2" }],
+          xMin, xMax,
+          yMin: Math.max(0, Math.min(...calPts.map((p) => p.y)) - 150),
+          yMax: Math.max(...calPts.map((p) => p.y)) + 150,
+        })
+      : `<p class="muted tiny center" style="padding:22px 0">Log meals with calories on the Today list to see them here.</p>`;
+    // mood + sleep from the check-ins
+    const moods = logged.filter((l) => l.mood != null).slice(-14);
+    const sleeps = logged.filter((l) => l.sleep).map((l) => +l.sleep);
+    const avgSleep = sleeps.length ? (sleeps.reduce((a, b) => a + b, 0) / sleeps.length).toFixed(1) : null;
+
     return `
       <div class="statgrid">
         <div class="stat"><div class="big">${curW}</div><div class="lbl">current weight (lb)</div></div>
@@ -798,14 +804,24 @@
       </div>
       <div class="card"><h2>Weight</h2>${weightChart}</div>
       <div class="card">
+        <h2>Calories eaten</h2>
+        <p class="tiny muted" style="margin:2px 0 8px">${avgCal ? "Averaging about " + avgCal + " cal a day from the meals you log." : "Summed from the meals you log on Today."}</p>
+        ${calChart}
+      </div>
+      <div class="card">
+        <h2>Mood & sleep</h2>
+        ${moods.length ? `<div class="moodtrail">${moods.map((l) => `<span title="${esc(fmtDate(l.iso))}">${MOODS[l.mood].e}</span>`).join("")}</div>` : '<p class="muted tiny center" style="padding:10px 0">Log your mood in the daily check-in to see it here.</p>'}
+        ${avgSleep ? `<p class="tiny muted" style="margin-top:10px">Averaging <b>${avgSleep} hrs</b> of sleep on the nights you logged.</p>` : ""}
+      </div>
+      <div class="card">
         <h2>Weekly movement</h2>
-        <p class="tiny muted" style="margin:2px 0 8px">Minutes you logged as workouts each week.</p>
+        <p class="tiny muted" style="margin:2px 0 8px">Minutes you logged as activity each week.</p>
         ${weeks.filter((w) => w.minutes > 0).length ? weeks.map((wk) => `<div class="calweek">
             <span class="wk">Wk ${wk.week} · ${wk.phase}</span>
             <div class="progressbar" style="flex:1;margin:0"><span style="width:${clamp(Math.round(wk.minutes / maxMin * 100), 0, 100)}%"></span></div>
             <span class="tiny muted" style="flex:0 0 60px;text-align:right">${wk.minutes} min</span>
           </div>`).join("")
-          : '<p class="muted tiny center" style="padding:16px 0">Record workouts on the Workouts tab to fill this in.</p>'}
+          : '<p class="muted tiny center" style="padding:16px 0">Log movement on the Today tab to fill this in.</p>'}
       </div>
       <div class="card">
         <h2>Collection</h2>
@@ -1030,10 +1046,8 @@
   };
 
   SCREENS.plan = function () {
-    const tabs = [["workouts", "Workouts"], ["trends", "Trends"], ["marathon", "Marathon"]];
-    const body = planTab === "trends" ? trendsContent()
-      : planTab === "marathon" ? marathonContent()
-      : workoutsContent();
+    const tabs = [["trends", "Trends"], ["marathon", "Marathon"]];
+    const body = planTab === "marathon" ? marathonContent() : trendsContent();
     return `
       <div class="hero" style="padding-bottom:0"><h1>Progress</h1></div>
       <div class="segbar">${tabs.map(([k, label]) => `<button class="seg ${planTab === k ? "on" : ""}" data-plantab="${k}">${label}</button>`).join("")}</div>
@@ -1041,68 +1055,82 @@
     `;
   };
 
-  // ---- Workouts tab: record what you did + estimate calories burned ----
-  const WORKOUTS = [
-    { type: "Run", met: 9.8, ico: "🏃" }, { type: "Walk", met: 3.5, ico: "🚶" },
-    { type: "Strength", met: 5.0, ico: "🏋️" }, { type: "Yoga", met: 3.0, ico: "🧘" },
-    { type: "Cycling", met: 7.5, ico: "🚴" }, { type: "Swim", met: 8.0, ico: "🏊" }, { type: "Other", met: 5.0, ico: "✨" },
-  ];
-  // kcal ~= MET * 3.5 * kg / 200 * minutes  (kg from current weight, default start weight)
-  function estKcal(met, minutes) {
-    const lb = latestWeightLb();
-    const kg = lb / 2.20462;
-    return Math.round(met * 3.5 * kg / 200 * minutes);
-  }
-  function latestWeightLb() {
-    for (let i = dayIndex[planToday()]; i >= 0; i--) {
-      const l = S.days[PLAN.days[i].date] && S.days[PLAN.days[i].date].log;
-      if (l && l.weight) return +l.weight;
+  // ---- activity logging (the "Moved my body" editor on Today) ----
+  const ACTIVITIES = ["Run", "Walk", "Strength", "Yoga", "Cycling", "Swim", "Hike", "Pilates", "Dance", "Rowing", "Other"];
+  // adding/removing an activity keeps the movement check, lettuce and streak in sync
+  function onWorkoutsChanged(iso) {
+    const ds = dayState(iso), has = (S.workouts[iso] || []).length > 0;
+    if (has && !ds.checks.movement) {
+      ds.checks.movement = true;
+      if (!ds.granted.movement) { ds.granted.movement = true; S.clovers += lettuceReward(); }
+    } else if (!has && ds.checks.movement) {
+      ds.checks.movement = false;
     }
-    return PLAN.meta.startWeightLb;
+    evaluateDay(iso); recomputeStreak(); touch();
   }
-  function workoutsContent() {
-    const iso = woDate || planToday();
-    const isToday = iso === planToday();
-    const atStart = iso === START, atEnd = iso === RACE;
-    const todays = (S.workouts && S.workouts[iso]) || [];
-    const todayKcal = todays.reduce((a, w) => a + (w.kcal || 0), 0);
-    const stravaOn = !!(S.strava && S.strava.connected);
-    return `
-      <div class="card tint-lav">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-          <div><b>Runs from Strava</b><div class="tiny muted">${stravaOn ? "Connected. Your runs log automatically." : "Connect once and your runs log themselves."}</div></div>
-          <button class="btn small ${stravaOn ? "ghost" : ""}" data-strava="1" style="width:auto">${stravaOn ? "Connected" : "Connect Strava"}</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2 style="margin-bottom:8px">Record a workout</h2>
-        <div class="date-nav">
-          <button class="date-arrow" data-woday="-1" ${atStart ? "disabled" : ""} aria-label="Previous day">${backArrow}</button>
-          <div class="date-cur"><b>${isToday ? "Today" : esc(fmtDate(iso))}</b>${isToday ? "" : `<button class="date-today" data-wotoday="1">Jump to today</button>`}</div>
-          <button class="date-arrow" data-woday="1" ${atEnd ? "disabled" : ""} aria-label="Next day">${chevron}</button>
-        </div>
-        <p class="tiny muted" style="margin:2px 0 8px">Log walks, strength, yoga and cross-training here. Runs come from Strava.</p>
-        <div class="wo-types">${WORKOUTS.map((w, i) => `<button class="wo-type ${i === 0 ? "sel" : ""}" data-wotype="${w.type}" data-met="${w.met}">${w.ico} ${w.type}</button>`).join("")}</div>
-        <div class="field" style="margin-top:8px"><label>Minutes</label><input id="wo-min" type="number" inputmode="numeric" placeholder="e.g. 45" /></div>
-        <div class="wo-est tiny muted" id="wo-est">Estimated burn appears here.</div>
-        <button class="btn" id="wo-add" style="margin-top:8px">Add workout <span class="tiny" style="opacity:.85">(+3-5 ${cloverIco})</span></button>
-      </div>
-
-      ${todays.length ? `<div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:baseline"><h2>${isToday ? "Today's workouts" : "Logged that day"}</h2><span class="tiny muted">${todayKcal} kcal</span></div>
-        ${todays.map((w, i) => `<div class="meal-row"><span class="when">${esc(w.type)}</span><span class="what">${w.minutes} min · ~${w.kcal} kcal <button class="wo-del" data-wodel="${i}" aria-label="remove">✕</button></span></div>`).join("")}
-      </div>` : ""}
-
-      <p class="tiny muted center" style="margin:6px 0">Calorie burn is a rough estimate from your weight, activity, and time. Not exact.</p>
-    `;
+  function addWorkout(iso, type, minutes) {
+    S.workouts[iso] = S.workouts[iso] || [];
+    S.workouts[iso].push({ type: type, minutes: (minutes && minutes > 0) ? minutes : undefined });
+    onWorkoutsChanged(iso);
+  }
+  function removeWorkout(iso, idx) { (S.workouts[iso] || []).splice(idx, 1); onWorkoutsChanged(iso); }
+  // editor opened by tapping "Moved my body" on Today: log activities (type + optional
+  // minutes) or connect Strava to auto-import runs. Everything about movement lives here.
+  function openMovement(iso) {
+    iso = iso || viewISO;
+    const close = () => { $("#modal-root").innerHTML = ""; render(); };
+    const draw = () => {
+      const list = (S.workouts && S.workouts[iso]) || [];
+      const stravaOn = !!(S.strava && S.strava.connected);
+      $("#modal-root").innerHTML = `
+        <div class="modal-scrim" id="mv-scrim">
+          <div class="sheet ms">
+            <h2 style="margin:0 0 2px">🏃 Moved my body</h2>
+            <p class="tiny muted" style="margin:0 0 12px">What did you do? Type it or pick an activity, add minutes if you like.</p>
+            <div class="ms-list">
+              ${list.length ? list.map((w, i) => `
+                <div class="ms-item">
+                  <span class="ms-name">${esc(w.type || "Activity")}${w.miles ? ` · ${w.miles} mi` : ""}${w.stravaId ? ` <span class="ms-src">Strava</span>` : ""}</span>
+                  <span class="ms-cal">${w.minutes ? w.minutes + " min" : "—"}</span>
+                  <button class="ms-del" data-wdel="${i}" aria-label="Remove ${esc(w.type || "activity")}">✕</button>
+                </div>`).join("") : `<p class="tiny muted center" style="padding:8px 0">Nothing logged yet.</p>`}
+            </div>
+            <div class="ms-add">
+              <input id="mv-type" class="ms-input" list="mv-list" placeholder="Activity (type or pick)" autocomplete="off">
+              <input id="mv-min" class="ms-input ms-calin" type="number" inputmode="numeric" placeholder="min">
+              <button class="btn small" id="mv-add">Add</button>
+            </div>
+            <datalist id="mv-list">${ACTIVITIES.map((a) => `<option value="${a}">`).join("")}</datalist>
+            <div class="mv-strava">
+              <div class="tiny"><b>Strava</b><div class="muted">${stravaOn ? "Connected. Runs log automatically." : "Connect once and your runs log themselves."}</div></div>
+              <button class="btn small ${stravaOn ? "ghost" : ""}" data-strava="1" style="width:auto">${stravaOn ? "Connected" : "Connect"}</button>
+            </div>
+            <button class="btn ghost small" id="mv-done" style="margin-top:12px">Done</button>
+          </div>
+        </div>`;
+      const typeEl = $("#mv-type"), minEl = $("#mv-min");
+      $("#mv-scrim").onclick = (e) => { if (e.target.id === "mv-scrim") close(); };
+      $("#mv-done").onclick = close;
+      const add = () => {
+        const t = typeEl.value.trim(); if (!t) { typeEl.focus(); return; }
+        const m = minEl.value.trim();
+        addWorkout(iso, t, m === "" ? undefined : Math.round(+m));
+        draw(); $("#mv-type").focus();
+      };
+      $("#mv-add").onclick = add;
+      typeEl.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); minEl.value.trim() === "" ? minEl.focus() : add(); } };
+      minEl.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
+      $("#modal-root").querySelectorAll("[data-wdel]").forEach((b) => b.onclick = () => { removeWorkout(iso, +b.dataset.wdel); draw(); });
+      $("#modal-root").querySelectorAll("[data-strava]").forEach((b) => b.onclick = connectStrava);
+    };
+    draw();
   }
 
   function marathonContent() {
     const curWeek = (dayByISO(planToday()) || {}).week;
     return `
       <div class="card tint-lav">
-        <p style="margin:0;color:var(--ink);font-size:0.92rem">The optional marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> and <b>Workouts</b> tabs.</p>
+        <p style="margin:0;color:var(--ink);font-size:0.92rem">The optional marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> tab.</p>
       </div>
       <div class="card">
         <h2>Training calendar</h2>
@@ -1209,19 +1237,6 @@
   }
 
   // ---------- workouts ----------
-  function addWorkout(type, met, minutes) {
-    const iso = woDate || planToday();
-    S.workouts[iso] = S.workouts[iso] || [];
-    S.workouts[iso].push({ type, minutes, kcal: estKcal(met, minutes) });
-    // recording a workout satisfies "moved my body" and earns 3-5 lettuce once for the day
-    const ds = dayState(iso);
-    if (!ds.granted.movement) { ds.granted.movement = true; S.clovers += lettuceReward(); }
-    ds.checks.movement = true;
-    evaluateDay(iso);   // may award the 3-in-a-row workout bunny
-    recomputeStreak();
-    touch(); render(); flushAwards();
-    toast("Workout logged");
-  }
   const stravaBase = () => (CFG.STRAVA_WORKER_URL || "").replace(/\/+$/, "");
   function connectStrava() {
     const base = stravaBase();
@@ -1308,10 +1323,8 @@
         if (S.workouts[iso].some((w) => w.stravaId === a.id)) return; // already imported
         const minutes = Math.round((a.moving_time || a.elapsed_time || 0) / 60);
         const miles = a.distance ? Math.round((a.distance / 1609.34) * 10) / 10 : 0;
-        S.workouts[iso].push({ type: a.type || "Run", minutes, kcal: estKcal(9.8, minutes), miles, stravaId: a.id, name: a.name || "" });
-        // a synced run counts as moving that day (also feeds the 3-in-a-row streak)
-        const ds = dayState(iso);
-        ds.checks.movement = true; ds.granted.movement = true;
+        S.workouts[iso].push({ type: a.type || "Run", minutes, miles, stravaId: a.id, name: a.name || "" });
+        onWorkoutsChanged(iso); // a synced run counts as moving that day + feeds the streak
         added++;
       });
       if (S.strava) S.strava.lastSync = Math.floor(Date.now() / 1000);
@@ -1769,13 +1782,11 @@
     view.querySelectorAll("[data-check]").forEach((el) => el.onclick = () => {
       const key = el.dataset.check;
       if (key === "log") { openLog(viewISO); return; }
+      if (key === "movement") { openMovement(viewISO); return; } // movement opens the activity editor
       if (MEAL_SLOT_KEYS.includes(key)) { openMealSlot(key, viewISO); return; } // meals open an editor (name + calories)
       const item = itemsFor().find((i) => i.key === key);
       toggleCheck(viewISO, item);
     });
-    // free-text activity note (saved without a re-render so focus stays)
-    const an = view.querySelector("#activity-note");
-    if (an) an.oninput = () => { const ds = dayState(viewISO); ds.log = ds.log || {}; ds.log.movementNote = an.value; touch(); };
     // day nav
     view.querySelectorAll("[data-day]").forEach((el) => el.onclick = () => {
       const dir = el.dataset.day, idx = dayIndex[viewISO];
@@ -1815,37 +1826,6 @@
     // settings + feed-all (meadow)
     view.querySelectorAll("[data-settings]").forEach((b) => b.onclick = openSettings);
     view.querySelectorAll("[data-feedall]").forEach((b) => b.onclick = feedAll);
-    // Strava connect
-    view.querySelectorAll("[data-strava]").forEach((b) => b.onclick = connectStrava);
-    // workout recorder
-    let woType = "Run", woMet = 9.8;
-    view.querySelectorAll("[data-wotype]").forEach((b) => b.onclick = () => {
-      woType = b.dataset.wotype; woMet = +b.dataset.met;
-      view.querySelectorAll(".wo-type").forEach((x) => x.classList.remove("sel"));
-      b.classList.add("sel");
-      updateWoEst();
-    });
-    const woMin = view.querySelector("#wo-min");
-    function updateWoEst() {
-      const est = view.querySelector("#wo-est"); if (!est) return;
-      const m = +(woMin && woMin.value);
-      est.innerHTML = m > 0 ? `Estimated burn: <b>~${estKcal(woMet, m)} kcal</b>` : "Estimated burn appears here.";
-    }
-    if (woMin) woMin.oninput = updateWoEst;
-    const woAdd = view.querySelector("#wo-add");
-    if (woAdd) woAdd.onclick = () => {
-      const m = Math.round(+(woMin && woMin.value));
-      if (!m || m <= 0) { toast("Add how many minutes"); return; }
-      addWorkout(woType, woMet, m);
-    };
-    view.querySelectorAll("[data-wodel]").forEach((el) => el.onclick = () => {
-      const iso = woDate || planToday(); (S.workouts[iso] || []).splice(+el.dataset.wodel, 1); touch(); render();
-    });
-    // date stepper on the Workouts recorder
-    view.querySelectorAll("[data-woday]").forEach((el) => el.onclick = () => {
-      woDate = shiftISO(woDate || planToday(), +el.dataset.woday); render();
-    });
-    view.querySelectorAll("[data-wotoday]").forEach((el) => el.onclick = () => { woDate = null; render(); });
   }
 
   // ---------- auth / boot ----------
