@@ -8,5 +8,5 @@ window.CONFIG = {
   DEV_PASSWORD: "2alexarae", // used only when REQUIRE_PASSWORD is true (and no backend)
   // Strava: paste the deployed Cloudflare Worker URL here to turn on "Connect Strava".
   // Until it is set, the Connect button explains the one-time setup. See worker/README.md.
-  STRAVA_WORKER_URL: "", // e.g. https://bunny-strava.<subdomain>.workers.dev
+  STRAVA_WORKER_URL: "https://bunny-strava.bianca-r-pagano.workers.dev",
 };

@@ -3,8 +3,11 @@ main = "strava-worker.js"
 compatibility_date = "2024-11-01"
 
 # The site allowed to receive the OAuth redirect (your GitHub Pages URL).
+# STRAVA_CLIENT_ID is public (it appears in the OAuth URL), so it lives here.
+# The Client Secret is NOT here - set it with `wrangler secret put STRAVA_CLIENT_SECRET`.
 [vars]
 APP_ORIGIN = "https://baaurora.github.io"
+STRAVA_CLIENT_ID = "264562"
 
 # Token storage. Already created for you in Bianca.r.pagano@gmail.com's Cloudflare
 # account (id 5746193bee50d095617df9749ced8a06). If you deploy under a DIFFERENT
