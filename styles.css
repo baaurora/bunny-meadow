@@ -108,7 +108,10 @@ a { color: var(--lavender-deep); }
   margin: 14px 0;
   border: 1px solid rgba(255, 255, 255, 0.7);
 }
-.card.tint-lav { background: linear-gradient(160deg, #fff, var(--lavender) 220%); }
+.card.tint-lav { background: linear-gradient(160deg, #fff, var(--lavender) 220%); color: #4a4458; }
+/* tint-lav's background is always light, so keep its text dark in every mode */
+.card.tint-lav h2, .card.tint-lav b { color: #4a4458; }
+.card.tint-lav .muted, .card.tint-lav .tiny.muted { color: #6b6178; }
 
 /* ---------- Header / hero ---------- */
 /* Liquid Glass navigation layer: a translucent bar that floats over content. */

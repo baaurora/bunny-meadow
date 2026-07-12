@@ -1130,7 +1130,7 @@
     const curWeek = (dayByISO(planToday()) || {}).week;
     return `
       <div class="card tint-lav">
-        <p style="margin:0;color:var(--ink);font-size:0.92rem">The optional marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> tab.</p>
+        <p style="margin:0;font-size:0.92rem">The optional marathon coaching plan built from the workbook. Follow it if you like, or just borrow ideas. Your own daily log lives on the <b>Today</b> tab.</p>
       </div>
       <div class="card">
         <h2>Training calendar</h2>
