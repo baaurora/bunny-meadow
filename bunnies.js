@@ -23,6 +23,7 @@
     { id: "leo", breed: "Lionhead", nick: "Leo", rarity: "rare", poses: 3 },
     { id: "cloud", breed: "Angora", nick: "Cloud", rarity: "rare", poses: 3 },
     { id: "sunny", breed: "Fuzzy Lop", nick: "Sunny", rarity: "rare", poses: 2 },
+    { id: "honey", breed: "Palomino", nick: "Honey", rarity: "rare", poses: 3 },
 
     { id: "patch", breed: "Harlequin", nick: "Patch", rarity: "epic", poses: 3 },
 

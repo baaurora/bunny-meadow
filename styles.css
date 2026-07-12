@@ -223,7 +223,8 @@ a { color: var(--lavender-deep); }
 }
 .dexcell.locked { background: var(--bg-2); box-shadow: none; }
 .dexcell .art { width: 78px; height: 78px; margin: 0 auto; display: grid; place-items: center; }
-.dexcell.locked .art { filter: grayscale(1) brightness(1.6) opacity(0.35); }
+/* undiscovered slots hide the bunny entirely - just a mystery outline with a ? */
+.dexq { width: 78px; height: 78px; margin: 0 auto; display: grid; place-items: center; font-size: 2rem; font-weight: 800; color: var(--ink-faint); border: 2px dashed var(--line); border-radius: 16px; background: var(--bg-2); }
 .dexcell .nm { font-weight: 700; font-size: 0.82rem; margin-top: 2px; }
 .dexcell.locked .nm { color: var(--ink-faint); }
 .dexcell .rar { font-size: 0.66rem; padding: 2px 8px; border-radius: 999px; display: inline-block; margin-top: 3px; font-weight: 700; }

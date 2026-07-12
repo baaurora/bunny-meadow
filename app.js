@@ -716,9 +716,9 @@
           return `<div class="dexcell ${have ? "" : "locked"} ${wandered ? "wandered" : ""}" ${have ? `data-bunny="${b.id}"` : ""}>
             ${have && have.count > 1 ? `<span class="count">×${have.count}</span>` : ""}
             ${wandered ? '<span class="wandtag">wandered</span>' : ""}
-            <div class="art">${B.render(b, 78, { accessory: have ? equipped(b.id) : null })}</div>
+            ${have ? `<div class="art">${B.render(b, 78, { accessory: equipped(b.id) })}</div>` : '<div class="dexq">?</div>'}
             <div class="nm">${have ? esc(bunnyName(b.id)) : "???"}</div>
-            <div class="dexbreed tiny muted">${have ? esc(b.breed) : ""}</div>
+            <div class="dexbreed tiny muted">${have ? esc(b.breed) : "undiscovered"}</div>
             <div class="rar" style="background:${rar.color}44;color:${shade(rar.color)}">${rar.label}</div>
           </div>`;
         }).join("")}
