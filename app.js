@@ -254,7 +254,26 @@
     if (first) toast("Signed in as " + (S.googleUser.email || "your account") + " 🌿");
     await syncPull(true); // adopt cloud state if it is newer, then push ours up
     syncPush();
-    if ($("#set-scrim")) openSettings(); else render();
+    if ($("#app").classList.contains("hide")) enterApp();   // signed in from the launch screen
+    else if ($("#set-scrim")) openSettings();               // from Settings
+    else render();
+  }
+  // launch screen: sign in with Google before entering (the front door)
+  function showGoogleLogin() {
+    $("#app").classList.add("hide");
+    $("#nav").classList.add("hide");
+    const lock = $("#lock");
+    lock.classList.remove("hide");
+    lock.querySelector(".box").innerHTML = `
+      <div id="lock-art"></div>
+      <h1>Bunny Meadow</h1>
+      <p>Sign in to save your meadow and keep it synced across your phone and laptop.</p>
+      <div id="g-login-btn" style="display:flex;justify-content:center;margin:16px 0 8px"></div>
+      <button class="linkbtn" id="g-skip">Continue without an account</button>
+    `;
+    $("#lock-art").innerHTML = B.sleeping(120);
+    renderGoogleButton($("#g-login-btn"));
+    $("#g-skip").onclick = () => enterApp();
   }
   // on app open, quietly refresh the token + pull any changes from another device
   async function silentSync() {
@@ -1736,6 +1755,8 @@
   function boot() {
     document.querySelectorAll("#nav button").forEach((b) => b.onclick = () => go(b.dataset.route));
     const sb = $("#settingsbtn"); if (sb) sb.onclick = openSettings;
+    // Google sign-in is the front door: show it at launch unless already signed in.
+    if (googleEnabled() && !(S.googleUser && S.googleUser.sub)) { showGoogleLogin(); return; }
     // No password: open straight into the app (local-only mode).
     if (!CFG.REQUIRE_PASSWORD && !CFG.FUNCTION_URL) {
       enterApp();

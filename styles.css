@@ -335,6 +335,7 @@ a { color: var(--lavender-deep); }
   border: 1.5px solid var(--line); font-size: 1.1rem; font-family: inherit; letter-spacing: 0.1em;
 }
 .lock .err { color: var(--blush-deep); font-size: 0.85rem; margin-top: 10px; min-height: 20px; }
+.linkbtn { background: none; color: var(--ink-soft); font: inherit; font-size: 0.85rem; text-decoration: underline; text-underline-offset: 2px; margin-top: 6px; }
 
 /* ---------- Award modal ---------- */
 .modal-scrim {
