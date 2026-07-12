@@ -985,42 +985,45 @@
     draw();
   }
 
-  // Build a categorized grocery list from the meal library's ingredients - no API, no
-  // backend, works offline. Used when the user is on their own uploaded plan (which
-  // brings a schedule but no grocery list of its own).
-  function classifyFood(s) {
-    s = s.toLowerCase();
-    if (/peanut|almond|walnut|pecan|cashew|pistachio|tahini|chia|flax|coconut| oil|olive/.test(s)) return "Fats";
-    if (/spinach|kale|arugula|lettuce|greens|berry|berries|banana|apple|orange|melon|grape|broccoli|pepper|tomato|onion|garlic|avocado|carrot|cucumber|zucchini|squash|sweet potato|potato|mushroom|lemon|lime|celery|beet|cabbage|cauliflower|peas|corn|fruit|veg|cilantro|basil|parsley|ginger|kiwi|salad/.test(s)) return "Produce";
-    if (/chicken|turkey|beef|pork|salmon|tuna|cod|fish|shrimp|egg|yogurt|greek|tofu|tempeh|edamame|bean|lentil|chickpea|cottage|milk|cheese|whey|protein/.test(s)) return "Proteins";
-    if (/oat|rice|pasta|bread|quinoa|tortilla|bagel|cereal|granola|couscous|noodle|cracker|wrap|bun|pita|farro|barley|pretzel|maple|honey|toast/.test(s)) return "Carbs";
-    if (/olive oil|avocado|almond|walnut|pecan|cashew|pistachio|nut|seed|peanut|tahini|chia|flax|butter|coconut| oil/.test(s)) return "Fats";
-    return "Pantry";
+  // A vocabulary of common training foods, grouped by grocery aisle. Used to pull clean,
+  // single-item terms out of free-text meals ("Chicken quinoa bowl" -> Chicken, Quinoa) so
+  // the generated grocery reads like a real shopping list. All local - no API, no backend.
+  const FOOD_GROUPS = {
+    Carbs: ["sweet potato", "brown rice", "white rice", "whole grain bread", "whole wheat bread", "maple syrup", "oatmeal", "oat", "rice", "quinoa", "pasta", "bread", "toast", "bagel", "tortilla", "wrap", "couscous", "granola", "cereal", "potato", "cracker", "pretzel", "farro", "barley", "noodle", "pita", "bun", "rye", "honey"],
+    Proteins: ["greek yogurt", "cottage cheese", "string cheese", "protein powder", "chicken breast", "ground turkey", "ground beef", "chicken", "turkey", "beef", "pork", "salmon", "tuna", "cod", "tilapia", "fish", "shrimp", "tofu", "tempeh", "egg", "yogurt", "milk", "cheese", "feta", "lentil", "chickpea", "edamame", "hummus", "bean", "jerky"],
+    Produce: ["bell pepper", "green bean", "spinach", "kale", "lettuce", "arugula", "broccoli", "cauliflower", "carrot", "cucumber", "tomato", "onion", "garlic", "avocado", "zucchini", "mushroom", "pepper", "celery", "cabbage", "asparagus", "blueberries", "strawberries", "raspberries", "berries", "banana", "apple", "orange", "grape", "melon", "kiwi", "raisin", "mango", "pear", "peach", "pea", "corn", "salad", "beet", "date"],
+    Fats: ["peanut butter", "almond butter", "nut butter", "olive oil", "pumpkin seed", "chia seed", "flax seed", "trail mix", "almond", "walnut", "pecan", "cashew", "pistachio", "peanut", "tahini", "coconut", "olive", "nut", "seed", "chia", "flax"],
+    Pantry: ["broth", "salsa"],
+  };
+  const FOOD_CAT = {};
+  Object.keys(FOOD_GROUPS).forEach((cat) => FOOD_GROUPS[cat].forEach((w) => { if (!(w in FOOD_CAT)) FOOD_CAT[w] = cat; }));
+  const FOOD_ORDER = Object.keys(FOOD_CAT).sort((a, b) => b.length - a.length); // longest first so "sweet potato" beats "potato"
+  // pull the grocery-worthy foods out of a free-text meal or ingredient string
+  function extractFoods(text) {
+    let s = " " + String(text).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ") + " ";
+    const found = [];
+    for (const w of FOOD_ORDER) {
+      const re = new RegExp("\\b" + w + "(s|es)?\\b");
+      if (re.test(s)) { found.push(w); s = s.replace(new RegExp("\\b" + w + "(s|es)?\\b", "g"), " "); }
+    }
+    return found;
   }
-  // split a free-text meal ("Oatmeal with berries and walnuts") into shopping items
-  function tokenizeMeal(s) {
-    return String(s).split(/,|;|\/|\+|\band\b|\bwith\b|\bplus\b|\bon\b|\bover\b|\btopped with\b|\bside of\b/i)
-      .map((p) => p
-        .replace(/\([^)]*\)/g, " ")
-        .replace(/[0-9]+([.\/][0-9]+)?\s*(g|kg|oz|lb|cups?|tbsp|tsp|ml|l|scoops?|slices?|cloves?|handful|servings?)?\b/gi, " ")
-        .replace(/\b(a|an|the|of|some|fresh|cooked|sliced|chopped|diced|grilled|baked|roasted|steamed|large|small|medium|low|non|fat|nonfat|plain|to|taste|optional|serving|your|choice)\b/gi, " ")
-        .replace(/[^a-zA-Z\s-]/g, " ").replace(/\s+/g, " ").trim())
-      .filter((t) => t.length > 2 && t.length < 28);
-  }
+  const titleCase = (w) => w.replace(/\b\w/g, (c) => c.toUpperCase());
   // does the active custom plan carry per-day meals?
   function planHasMeals() { return !!(S.customPlan && PLAN.days.some((d) => d.meals && Object.keys(d.meals).length)); }
   // Build a categorized grocery list. Prefers the meals in an uploaded plan; otherwise
-  // aggregates the recipe library. All local - no API, no backend.
+  // aggregates the recipe library. Clean single-food terms via the vocabulary above.
   function generateGrocery() {
     const cats = [["Produce", "🥬"], ["Proteins", "🍗"], ["Carbs", "🌾"], ["Fats", "🥑"], ["Pantry", "🧂"]];
     const bucket = { Produce: new Set(), Proteins: new Set(), Carbs: new Set(), Fats: new Set(), Pantry: new Set() };
-    const add = (item) => { item = (item || "").toString().trim(); if (item && item.length < 42) bucket[classifyFood(item)].add(item.charAt(0).toUpperCase() + item.slice(1)); };
+    const sources = [];
     if (planHasMeals()) {
-      PLAN.days.forEach((d) => { if (d.meals) MEAL_SLOT_KEYS.forEach((k) => { if (d.meals[k]) tokenizeMeal(d.meals[k]).forEach(add); }); });
+      PLAN.days.forEach((d) => { if (d.meals) MEAL_SLOT_KEYS.forEach((k) => { if (d.meals[k]) sources.push(d.meals[k]); }); });
     } else {
-      allMeals().forEach((m) => { const r = m.mine ? m : (window.MEALS || {})[m.name]; ((r && r.ingredients) || []).forEach((i) => add((i && i.item) || "")); });
+      allMeals().forEach((m) => { const r = m.mine ? m : (window.MEALS || {})[m.name]; ((r && r.ingredients) || []).forEach((i) => sources.push((i && i.item) || "")); });
     }
-    return cats.map(([name, emoji]) => ({ name, emoji, items: [...bucket[name]].sort().slice(0, 20) })).filter((c) => c.items.length);
+    sources.forEach((text) => extractFoods(text).forEach((w) => bucket[FOOD_CAT[w]].add(titleCase(w))));
+    return cats.map(([name, emoji]) => ({ name, emoji, items: [...bucket[name]].sort() })).filter((c) => c.items.length);
   }
   // The grocery section on the Food tab. Uses the plan's own weekly grocery when there is
   // one (the built-in sample), otherwise generates a list from the plan's meals / recipes.
