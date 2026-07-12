@@ -12,7 +12,8 @@
     - STRAVA_CLIENT_SECRET secret (wrangler secret put STRAVA_CLIENT_SECRET)
     - APP_ORIGIN         optional var: the site allowed to receive the redirect,
                          e.g. https://baaurora.github.io
-    - GOOGLE_CLIENT_ID   optional var: enables cloud sync (the Google Sign-In client id)
+    - GOOGLE_CLIENT_ID   optional var: overrides the built-in cloud-sync client id
+                         (the Google Sign-In client id is public and baked in below)
 
   Routes:
     GET  /login?return=<appUrl>  -> bounce to Strava's consent screen
@@ -26,6 +27,11 @@
 const STRAVA_AUTH = "https://www.strava.com/oauth/authorize";
 const STRAVA_TOKEN = "https://www.strava.com/oauth/token";
 const STRAVA_API = "https://www.strava.com/api/v3";
+
+// The Google Sign-In client id is PUBLIC (it ships in the app's config.js), so we
+// keep it here as a fallback when it is not set as a Worker variable. This lets a
+// plain code deploy turn on cloud sync with no extra variable step.
+const GOOGLE_CLIENT_ID = "602863764935-eeh59ffjb3a640i9go0pcqvgv3h578q0.apps.googleusercontent.com";
 
 // hosts we are willing to redirect back to (prevents open-redirect abuse)
 const ALLOWED_HOSTS = ["localhost", "127.0.0.1"];
@@ -170,12 +176,13 @@ export default {
 async function verifyGoogle(request, env) {
   const auth = request.headers.get("Authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  if (!m || !env.GOOGLE_CLIENT_ID) return null;
+  const clientId = env.GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID;
+  if (!m || !clientId) return null;
   try {
     const res = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(m[1]));
     if (!res.ok) return null;
     const info = await res.json();
-    if (!info || info.aud !== env.GOOGLE_CLIENT_ID) return null;
+    if (!info || info.aud !== clientId) return null;
     if (info.exp && Number(info.exp) * 1000 < Date.now()) return null;
     return { sub: info.sub, email: info.email, name: info.name };
   } catch (_) { return null; }
