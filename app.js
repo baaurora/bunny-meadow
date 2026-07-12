@@ -61,6 +61,11 @@
     const dt = new Date(y, m - 1, d);
     return dt.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   }
+  // the meal an uploaded plan suggests for a given day + slot (breakfast/lunch/dinner/snacks), or ""
+  function planMealFor(iso, slot) {
+    const i = dayIndex[iso], d = i != null ? PLAN.days[i] : null;
+    return (d && d.meals && d.meals[slot]) ? String(d.meals[slot]) : "";
+  }
   const RUN_TYPES = ["Long Run", "Workout", "Easy Run", "Race"];
   const MOODS = [
     { e: "😄", label: "Great" }, { e: "🙂", label: "Good" }, { e: "😐", label: "Okay" },
@@ -549,7 +554,7 @@
             } else if (isMeal && planned.length) {
               const c = slotCal(viewISO, it.key);
               sub = planned.map((m) => mealName(m)).join(", ") + (c > 0 ? " · " + c + " cal" : ""); filled = true;
-            } else if (isMeal) sub = "Tap to add what you ate";
+            } else if (isMeal) { const sug = planMealFor(viewISO, it.key); sub = sug ? "From your plan: " + sug : "Tap to add what you ate"; }
             else sub = it.sub || "";
             return `
             <button class="check ${ds.checks[it.key] ? "done" : ""} ${it.optional ? "optional" : ""}" data-check="${it.key}">
@@ -956,6 +961,8 @@
           </div>
         </div>`;
       const nameEl = $("#ms-name"), calEl = $("#ms-cal");
+      // if the day's plan suggests a meal and nothing is logged yet, pre-fill it (one tap to add)
+      if (!items.length) { const sug = planMealFor(iso, slot); if (sug) nameEl.value = sug; }
       $("#ms-scrim").onclick = (e) => { if (e.target.id === "ms-scrim") close(); };
       $("#ms-done").onclick = close;
       // picking / typing a menu meal auto-fills its calories (unless she already typed some)
@@ -981,37 +988,50 @@
   // Build a categorized grocery list from the meal library's ingredients - no API, no
   // backend, works offline. Used when the user is on their own uploaded plan (which
   // brings a schedule but no grocery list of its own).
+  function classifyFood(s) {
+    s = s.toLowerCase();
+    if (/peanut|almond|walnut|pecan|cashew|pistachio|tahini|chia|flax|coconut| oil|olive/.test(s)) return "Fats";
+    if (/spinach|kale|arugula|lettuce|greens|berry|berries|banana|apple|orange|melon|grape|broccoli|pepper|tomato|onion|garlic|avocado|carrot|cucumber|zucchini|squash|sweet potato|potato|mushroom|lemon|lime|celery|beet|cabbage|cauliflower|peas|corn|fruit|veg|cilantro|basil|parsley|ginger|kiwi|salad/.test(s)) return "Produce";
+    if (/chicken|turkey|beef|pork|salmon|tuna|cod|fish|shrimp|egg|yogurt|greek|tofu|tempeh|edamame|bean|lentil|chickpea|cottage|milk|cheese|whey|protein/.test(s)) return "Proteins";
+    if (/oat|rice|pasta|bread|quinoa|tortilla|bagel|cereal|granola|couscous|noodle|cracker|wrap|bun|pita|farro|barley|pretzel|maple|honey|toast/.test(s)) return "Carbs";
+    if (/olive oil|avocado|almond|walnut|pecan|cashew|pistachio|nut|seed|peanut|tahini|chia|flax|butter|coconut| oil/.test(s)) return "Fats";
+    return "Pantry";
+  }
+  // split a free-text meal ("Oatmeal with berries and walnuts") into shopping items
+  function tokenizeMeal(s) {
+    return String(s).split(/,|;|\/|\+|\band\b|\bwith\b|\bplus\b|\bon\b|\bover\b|\btopped with\b|\bside of\b/i)
+      .map((p) => p
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/[0-9]+([.\/][0-9]+)?\s*(g|kg|oz|lb|cups?|tbsp|tsp|ml|l|scoops?|slices?|cloves?|handful|servings?)?\b/gi, " ")
+        .replace(/\b(a|an|the|of|some|fresh|cooked|sliced|chopped|diced|grilled|baked|roasted|steamed|large|small|medium|low|non|fat|nonfat|plain|to|taste|optional|serving|your|choice)\b/gi, " ")
+        .replace(/[^a-zA-Z\s-]/g, " ").replace(/\s+/g, " ").trim())
+      .filter((t) => t.length > 2 && t.length < 28);
+  }
+  // does the active custom plan carry per-day meals?
+  function planHasMeals() { return !!(S.customPlan && PLAN.days.some((d) => d.meals && Object.keys(d.meals).length)); }
+  // Build a categorized grocery list. Prefers the meals in an uploaded plan; otherwise
+  // aggregates the recipe library. All local - no API, no backend.
   function generateGrocery() {
     const cats = [["Produce", "🥬"], ["Proteins", "🍗"], ["Carbs", "🌾"], ["Fats", "🥑"], ["Pantry", "🧂"]];
     const bucket = { Produce: new Set(), Proteins: new Set(), Carbs: new Set(), Fats: new Set(), Pantry: new Set() };
-    const classify = (s) => {
-      s = s.toLowerCase();
-      if (/spinach|kale|arugula|lettuce|greens|berry|berries|banana|apple|orange|melon|grape|broccoli|pepper|tomato|onion|garlic|avocado|carrot|cucumber|zucchini|squash|sweet potato|potato|mushroom|lemon|lime|celery|beet|cabbage|cauliflower|pea|corn|fruit|veg|cilantro|basil|parsley|ginger|kiwi/.test(s)) return "Produce";
-      if (/chicken|turkey|beef|pork|salmon|tuna|cod|fish|shrimp|egg|yogurt|greek|tofu|tempeh|edamame|bean|lentil|chickpea|cottage|milk|cheese|whey|protein/.test(s)) return "Proteins";
-      if (/oat|rice|pasta|bread|quinoa|tortilla|bagel|cereal|granola|couscous|noodle|cracker|wrap|bun|pita|farro|barley|pretzel|maple|honey/.test(s)) return "Carbs";
-      if (/olive oil|avocado|almond|walnut|pecan|cashew|pistachio|nut|seed|peanut|tahini|chia|flax|butter|coconut| oil/.test(s)) return "Fats";
-      return "Pantry";
-    };
-    allMeals().forEach((m) => {
-      const r = m.mine ? m : (window.MEALS || {})[m.name];
-      ((r && r.ingredients) || []).forEach((i) => {
-        const item = ((i && i.item) || "").toString().trim();
-        if (item && item.length < 42) bucket[classify(item)].add(item.charAt(0).toUpperCase() + item.slice(1));
-      });
-    });
-    return cats.map(([name, emoji]) => ({ name, emoji, items: [...bucket[name]].sort().slice(0, 18) })).filter((c) => c.items.length);
+    const add = (item) => { item = (item || "").toString().trim(); if (item && item.length < 42) bucket[classifyFood(item)].add(item.charAt(0).toUpperCase() + item.slice(1)); };
+    if (planHasMeals()) {
+      PLAN.days.forEach((d) => { if (d.meals) MEAL_SLOT_KEYS.forEach((k) => { if (d.meals[k]) tokenizeMeal(d.meals[k]).forEach(add); }); });
+    } else {
+      allMeals().forEach((m) => { const r = m.mine ? m : (window.MEALS || {})[m.name]; ((r && r.ingredients) || []).forEach((i) => add((i && i.item) || "")); });
+    }
+    return cats.map(([name, emoji]) => ({ name, emoji, items: [...bucket[name]].sort().slice(0, 20) })).filter((c) => c.items.length);
   }
-  // The grocery section that lives on the Food tab. Uses the plan's own weekly grocery
-  // when there is one (the built-in sample / an uploaded plan that includes it), and
-  // otherwise generates a list from the meal library.
+  // The grocery section on the Food tab. Uses the plan's own weekly grocery when there is
+  // one (the built-in sample), otherwise generates a list from the plan's meals / recipes.
   function groceryContent() {
     if (S.customPlan) {
       const cats = generateGrocery();
       return `<div class="card">
         <h2>Suggested weekly grocery for marathon training</h2>
-        <p class="tiny muted" style="margin:2px 0 12px">Built from your meal library since your uploaded plan doesn't include a grocery list. A starting point, not a rule.</p>
+        <p class="tiny muted" style="margin:2px 0 12px">${planHasMeals() ? "Built from the meals in your plan." : "Built from your meal library, since your plan doesn't list meals."} A starting point, not a rule.</p>
         ${cats.length ? cats.map((c) => `<div class="grocery-cat"><div class="grocery-cat-h">${c.emoji} ${c.name}</div><div class="grocery-items">${c.items.map((i) => esc(i)).join(" · ")}</div></div>`).join("")
-          : '<p class="muted tiny center" style="padding:14px 0">Add some recipes and this will fill in.</p>'}
+          : '<p class="muted tiny center" style="padding:14px 0">Add meals to your plan or some recipes and this will fill in.</p>'}
       </div>`;
     }
     const curWeek = (dayByISO(planToday()) || {}).week;
@@ -1458,6 +1478,10 @@
       km: find("km", "kilomet"),
       notes: find("note", "description", "detail", "desc", "comment", "focus"),
       phase: find("phase", "block", "cycle"),
+      breakfast: find("breakfast"),
+      lunch: find("lunch"),
+      dinner: find("dinner", "supper"),
+      snacks: find("snack"),
     };
     if (ci.date < 0) { // no "date" header: sniff for the column that mostly parses as dates
       let best = -1, bestN = 0;
@@ -1471,6 +1495,10 @@
       const cells = rows[r];
       const iso = toISO(cells[ci.date]); if (!iso) continue;
       const miles = ci.miles >= 0 ? num(cells[ci.miles]) : (ci.km >= 0 ? num(cells[ci.km]) * 0.621371 : 0);
+      const meals = {};
+      [["breakfast", ci.breakfast], ["lunch", ci.lunch], ["dinner", ci.dinner], ["snacks", ci.snacks]].forEach(([k, idx]) => {
+        if (idx >= 0) { const v = String(cells[idx] == null ? "" : cells[idx]).trim(); if (v) meals[k] = v; }
+      });
       days.push({
         date: iso,
         weekRaw: ci.week >= 0 ? parseInt(cells[ci.week], 10) : null,
@@ -1478,6 +1506,7 @@
         training: ci.training >= 0 ? String(cells[ci.training] || "").trim() : "",
         miles: Math.round(miles * 10) / 10,
         notes: ci.notes >= 0 ? String(cells[ci.notes] || "").trim() : "",
+        meals: Object.keys(meals).length ? meals : undefined,
       });
     }
     if (!days.length) throw new Error("No dated rows found. Each day needs a date in the date column.");
@@ -1518,10 +1547,54 @@
   }
   function planPreview(p) {
     const sample = p.days.slice(0, 3).map((d) => `<li>${esc(fmtDate(d.date))} - ${esc(d.training)}${d.miles ? ` · ${d.miles} mi` : ""}</li>`).join("");
+    const withMeals = p.days.filter((d) => d.meals).length;
     return `<div class="plan-preview"><b>Found ${p.days.length} days</b> <span class="tiny muted">(weeks 1-${p.meta.totalWeeks})</span>
-      <div class="tiny muted">${esc(fmtDate(p.meta.startDate))} → ${esc(fmtDate(p.meta.raceDate))}</div>
+      <div class="tiny muted">${esc(fmtDate(p.meta.startDate))} → ${esc(fmtDate(p.meta.raceDate))}${withMeals ? ` · meals on ${withMeals} days` : ""}</div>
       <ul class="tiny plan-sample">${sample}${p.days.length > 3 ? `<li class="muted">and ${p.days.length - 3} more...</li>` : ""}</ul></div>`;
   }
+
+  // A ready-made prompt the user can paste into ChatGPT to generate a plan the app reads.
+  const PLAN_PROMPT = `Make me a marathon training plan as a downloadable CSV file. Use EXACTLY these column headers in the first row, then one row per day from my start date through race day:
+
+Date, Week, Phase, Workout, Miles, Notes, Breakfast, Lunch, Dinner, Snacks
+
+Rules:
+- Date = YYYY-MM-DD. Week = 1, 2, 3... Phase = Base, Build, Peak, Taper, or Race Week.
+- Workout = that day's session (Easy Run, Long Run, Tempo, Rest, Cross-train, etc). Miles = planned distance (0 on rest days).
+- Notes = one short cue for the day. Breakfast, Lunch, Dinner, Snacks = a short meal idea for each, balanced for endurance training.
+- Output ONLY the CSV, with no extra text before or after it.
+
+My details -> Race: [half or full] marathon on [date]. Current mileage: [X] miles/week. Experience: [beginner / intermediate / advanced]. Dietary notes: [none / vegetarian / etc].`;
+
+  function copyPlanPrompt() {
+    const ok = () => toast("Prompt copied - paste it into ChatGPT 📋");
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(PLAN_PROMPT).then(ok, showPromptFallback); return; }
+    } catch (_) {}
+    showPromptFallback();
+  }
+  // clipboard blocked (some in-app browsers) -> show the prompt in a selectable box
+  function showPromptFallback() {
+    document.getElementById("modal-root").insertAdjacentHTML("beforeend",
+      `<div class="modal-scrim" id="pp-scrim"><div class="sheet"><h2 style="margin:0 0 6px;font-size:1rem">Copy this into ChatGPT</h2>
+        <textarea class="rf-area" rows="12" readonly>${esc(PLAN_PROMPT)}</textarea>
+        <button class="btn small ghost" id="pp-ok" style="margin-top:10px">Done</button></div></div>`);
+    const box = document.querySelector("#pp-scrim textarea"); if (box) { box.focus(); box.select(); }
+    const close = () => { const s = document.getElementById("pp-scrim"); if (s) s.remove(); };
+    document.getElementById("pp-ok").onclick = close;
+    document.getElementById("pp-scrim").onclick = (e) => { if (e.target.id === "pp-scrim") close(); };
+  }
+  // instructions shown in both the first-run prompt and Settings
+  function planHelpHtml() {
+    return `<div class="plan-help">
+      <div class="tiny muted" style="margin-bottom:7px">No plan yet? Ask ChatGPT (or any assistant) to build one, then upload it here.</div>
+      <button class="btn ghost small" id="plan-prompt-copy" style="width:auto">📋 Copy a ChatGPT prompt</button>
+      <details class="plan-help-det" style="margin-top:8px"><summary class="tiny">Or make your own - what to include</summary>
+        <div class="tiny muted" style="padding:6px 0 0">A spreadsheet (Excel or CSV), one row per day, with a <b>Date</b> column plus any of <b>Week, Phase, Workout, Miles, Notes, Breakfast, Lunch, Dinner, Snacks</b>. The app builds your calendar and workout tracker from the schedule, suggests each day's meals on Today, and auto-generates your grocery list from them.</div>
+      </details>
+    </div>`;
+  }
+  function wirePlanHelp() { const b = document.getElementById("plan-prompt-copy"); if (b) b.onclick = copyPlanPrompt; }
 
   // Shared plan-upload wiring: a file <input> + a status <div>. Parses the file, shows a
   // preview, and applies it on confirm. onApplied() runs after the plan is applied.
@@ -1551,15 +1624,16 @@
     $("#modal-root").innerHTML = `
       <div class="modal-scrim" id="po-scrim"><div class="sheet">
         <h2 style="text-align:center;margin:0 0 4px">📄 Add your training plan</h2>
-        <p class="tiny muted" style="text-align:center;margin:0 0 14px">Upload your plan and it fills your <b>calendar</b> and the <b>Marathon</b> section with your own schedule. You can always change it later in Settings.</p>
-        <p class="tiny muted" style="margin:0 0 8px">Use <b>Excel</b> (.xlsx) or <b>CSV</b>, one row per day, with a <b>Date</b> column plus any of Week, Workout, Miles, Notes.</p>
-        <label class="file-btn" for="po-file">📄 Choose a plan file</label>
+        <p class="tiny muted" style="text-align:center;margin:0 0 14px">Upload a plan and the app builds your <b>calendar + workout tracker</b>, suggests each day's <b>meals</b>, and makes your <b>grocery list</b> - all from your file.</p>
+        ${planHelpHtml()}
+        <label class="file-btn" for="po-file" style="margin-top:12px">📄 Upload my plan file</label>
         <input id="po-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.ods" style="display:none" />
         <div id="po-status" style="margin-top:10px"></div>
         <button class="linkbtn" id="po-skip" style="display:block;margin:16px auto 0">Use the sample plan for now</button>
       </div></div>`;
     const skip = () => { S.planOnboarded = true; touch(); $("#modal-root").innerHTML = ""; render(); };
     wirePlanUpload($("#po-file"), $("#po-status"), () => { $("#modal-root").innerHTML = ""; toast("Plan added 🌿"); planTab = "marathon"; go("plan"); });
+    wirePlanHelp();
     $("#po-skip").onclick = skip;
     $("#po-scrim").onclick = (e) => { if (e.target.id === "po-scrim") skip(); };
   }
@@ -1599,8 +1673,8 @@
         <div class="set-sec">
           <div class="set-label">Your training plan</div>
           <div class="tiny muted" style="margin-bottom:8px">Currently using: <b>${custom ? esc((custom.meta && custom.meta.source) || "your uploaded plan") : "the Bunny Meadow marathon plan"}</b>${custom ? ` <span class="muted">(${custom.days.length} days)</span>` : ""}.</div>
-          <p class="tiny muted" style="margin-bottom:8px">Upload your own plan as <b>Excel</b> (.xlsx) or <b>CSV</b> with one row per day. Include a <b>Date</b> column, plus any of: Week, Workout, Miles, Notes.</p>
-          <label class="file-btn" for="plan-file">📄 Choose a plan file</label>
+          ${planHelpHtml()}
+          <label class="file-btn" for="plan-file" style="margin-top:12px">📄 Upload my plan file</label>
           <input id="plan-file" type="file" accept=".xlsx,.xls,.xlsm,.csv,.tsv,.ods" style="display:none" />
           <div id="plan-status" style="margin-top:10px"></div>
           ${custom ? `<button class="btn ghost small" id="plan-reset" style="margin-top:10px">Reset to Bunny Meadow plan</button>` : ""}
@@ -1630,6 +1704,7 @@
     const gBtn = $("#g-btn"); if (gBtn) renderGoogleButton(gBtn);
     const gOut = $("#g-signout"); if (gOut) gOut.onclick = () => { googleSignOut(); openSettings(); toast("Signed out"); };
     wirePlanUpload($("#plan-file"), $("#plan-status"), () => { $("#modal-root").innerHTML = ""; toast("Plan imported 🌿"); planTab = "marathon"; go("plan"); });
+    wirePlanHelp();
   }
 
   // ---------- bunny room (equip accessories) ----------
